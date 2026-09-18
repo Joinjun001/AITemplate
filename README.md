@@ -232,19 +232,41 @@ python scripts/plan_project.py --file project_spec.txt
 - 배열 순서 = 처리 순서입니다. 플래너는 "뒤 작업이 앞 작업 결과물에 의존하면 순서대로
   넣으라"는 지시를 받지만, 완벽하지 않을 수 있으니 결과를 한 번 훑어보고 이상하면
   `tasks/queue.jsonl`을 직접 편집해서 순서나 내용을 고쳐도 됩니다.
-- 작업 개수가 많으면(보통 5~20개) 완료까지 여러 사이클이 걸립니다. 기본 5분 간격이면
-  꽤 오래 걸리니, 빨리 끝까지 보고 싶으면 `CYCLE_INTERVAL_MIN`을 줄이거나(재설치 필요),
-  아니면 그냥 터미널에서 `python scripts/orchestrator.py`를 수동으로 반복 실행하세요:
-  ```bash
-  # Linux/macOS
-  while true; do python scripts/orchestrator.py; sleep 10; done
-  # Windows PowerShell
-  while ($true) { python scripts/orchestrator.py; Start-Sleep -Seconds 10 }
-  ```
 - 사용량 한도에 걸리면 평소처럼 조용히 쉬었다가 자동으로 이어집니다. 큰 프로젝트를
   통째로 맡기면 그 하루 한도를 거의 다 쓰게 될 수 있다는 뜻이기도 합니다.
 - 완료된 작업들은 각각 별도 커밋 + 병합 커밋으로 남기 때문에, `git log --oneline`으로
   전체 프로젝트가 어떤 순서로 만들어졌는지 그대로 다시 볼 수 있습니다.
+
+### 터미널에서 한 번만 실행해서 완성까지 (`run_project.py`)
+
+`plan_project.py`는 작업을 큐에 넣기만 하고 끝나기 때문에, 실제로 다 완성되려면
+스케줄러(백그라운드, 기본 5분 간격)가 여러 번 돌거나 `orchestrator.py`를 사람이
+반복 실행해줘야 합니다. **터미널에서 명령 한 번으로 끝까지("완성될 때까지")
+자동으로 진행시키고 싶으면 `run_project.py`를 쓰세요**:
+
+```bash
+python scripts/run_project.py "할일 관리 REST API 서버를 Flask + SQLite로 만들어줘.
+CRUD 엔드포인트, 입력 검증, pytest 테스트, README까지 포함해서."
+```
+
+내부적으로 `plan_project.py`와 똑같이 프로젝트를 작업으로 쪼갠 뒤, 큐의 모든 작업이
+`done` 또는 `blocked`가 될 때까지 `orchestrator.py`의 한 사이클(리뷰 1건 + 단순 1건 +
+복잡 1건)을 이 프로세스 안에서 계속 반복합니다. 즉 이 명령을 실행해둔 터미널을 켜둔
+채로 기다리기만 하면(또는 다른 일을 하다가 나중에 돌아오면) 그 사이 자동으로 끝까지
+진행되어 있습니다. 사용량 한도에 걸리면 조용히 대기했다가 한도가 풀리는 시점에
+자동으로 이어가므로, 대형 프로젝트라면 5시간짜리 Claude 한도를 몇 번 거쳐가며
+몇 시간 동안 켜져 있을 수도 있습니다.
+
+- `Ctrl+C`로 언제든 중단해도 진행 상황은 `tasks/queue.jsonl`에 그대로 남아있어서,
+  `python scripts/run_project.py --resume`로 새로 계획하지 않고 이어서 진행할 수
+  있습니다.
+- 컴퓨터를 끄면 당연히 멈춥니다 — "컴퓨터를 계속 켜두고 며칠에 걸쳐 여러 프로젝트를
+  틈틈이 처리"하는 시나리오는 `install.py`로 등록하는 백그라운드 스케줄러가 맡고,
+  `run_project.py`는 "지금 프로젝트 하나를 몰아서 끝까지" 보고 싶을 때 씁니다. 백그라운드
+  스케줄러가 이미 설치되어 있어도 `run_project.py`를 동시에 실행해서 상관없습니다
+  (같은 파일 락을 공유해서 서로 겹치지 않게 비켜갑니다).
+- 끝나면 완료/차단(blocked) 건수를 요약해서 보여주고, `blocked`가 있으면 어떤
+  작업이 왜 막혔는지(`review_notes`)까지 함께 출력합니다.
 
 ## 연습 브랜치로 안전하게 실습해보기
 
@@ -262,12 +284,9 @@ git checkout -b practice/todo-api main
   "BASE_BRANCH": "practice/todo-api"
 }
 
-# 3) 프로젝트를 통째로 맡긴다
-python scripts/plan_project.py "할일 관리 REST API 서버를 Flask + SQLite로 만들어줘.
+# 3) 프로젝트를 통째로 맡기고, 끝날 때까지 한 번에 지켜본다
+python scripts/run_project.py "할일 관리 REST API 서버를 Flask + SQLite로 만들어줘.
 CRUD 엔드포인트, 입력 검증, pytest 테스트, README까지 포함해서."
-
-# 4) 빠르게 지켜보고 싶으면 orchestrator를 반복 실행
-python scripts/orchestrator.py   # 5~10초 간격으로 여러 번
 ```
 
 이렇게 하면 `task/<id>` 브랜치들은 전부 `practice/todo-api`에서 갈라져 나와

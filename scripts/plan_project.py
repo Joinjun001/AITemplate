@@ -60,6 +60,37 @@ def plan(description: str) -> list[dict]:
     return tasks
 
 
+def enqueue(tasks: list[dict]) -> list[tuple[str, str, str]]:
+    """plan()이 반환한 작업 배열을 큐에 순서대로 추가하고, 추가된
+    (task_id, complexity, desc) 목록을 반환한다. plan_project.py와
+    run_project.py가 공통으로 쓴다."""
+    added: list[tuple[str, str, str]] = []
+    for t in tasks:
+        if not isinstance(t, dict):
+            continue
+        desc = t.get("desc") or t.get("description")
+        if not desc:
+            continue
+        complexity = t.get("complexity")
+        if complexity not in ("simple", "complex"):
+            complexity = "complex"  # 애매하면 더 신중한 쪽(Claude)으로
+
+        task_id = q.new_id()
+        q.add(
+            {
+                "id": task_id,
+                "desc": desc,
+                "complexity": complexity,
+                "status": "todo",
+                "assignee": None,
+                "retries": 0,
+                "review_notes": "",
+            }
+        )
+        added.append((task_id, complexity, desc))
+    return added
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print('사용법: plan_project.py "프로젝트 설명" 또는 plan_project.py --file <스펙파일>')
@@ -80,33 +111,8 @@ def main() -> int:
         print("[plan] 빈 작업 목록이 반환되었습니다. 프로젝트 설명을 좀 더 구체적으로 써서 다시 시도하세요.")
         return 1
 
-    added: list[tuple[str, str, str]] = []
-    skipped = 0
-    for t in tasks:
-        if not isinstance(t, dict):
-            skipped += 1
-            continue
-        desc = t.get("desc") or t.get("description")
-        if not desc:
-            skipped += 1
-            continue
-        complexity = t.get("complexity")
-        if complexity not in ("simple", "complex"):
-            complexity = "complex"  # 애매하면 더 신중한 쪽(Claude)으로
-
-        task_id = q.new_id()
-        q.add(
-            {
-                "id": task_id,
-                "desc": desc,
-                "complexity": complexity,
-                "status": "todo",
-                "assignee": None,
-                "retries": 0,
-                "review_notes": "",
-            }
-        )
-        added.append((task_id, complexity, desc))
+    added = enqueue(tasks)
+    skipped = len(tasks) - len(added)
 
     print(f"\n[plan] {len(added)}개 작업이 큐에 추가되었습니다"
           + (f" ({skipped}개는 형식이 이상해서 건너뜀)" if skipped else "") + ":\n")
@@ -114,8 +120,8 @@ def main() -> int:
         print(f"  - [{complexity:7s}] {task_id}: {desc}")
 
     print("\n다음 스케줄러 사이클부터 순서대로 자동 처리됩니다.")
-    print("바로 지켜보고 싶으면: python scripts/orchestrator.py 를 직접 반복 실행하거나")
-    print("state/orchestrator.log 를 tail -f 로 지켜보세요.")
+    print("한 번 실행으로 완성까지 끝까지 지켜보고 싶으면 대신 run_project.py를 쓰세요:")
+    print(f'  python scripts/run_project.py "{description[:60]}{"..." if len(description) > 60 else ""}"')
     return 0
 
 

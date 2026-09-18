@@ -39,6 +39,11 @@ def _write_all(tasks: list[dict[str, Any]]) -> None:
     tmp.replace(QUEUE_FILE)
 
 
+def all_tasks() -> list[dict[str, Any]]:
+    """큐에 있는 모든 작업을 그대로 반환한다(진행 상황 요약, 종료 조건 판단용)."""
+    return _read_all()
+
+
 def get(task_id: str) -> Optional[dict[str, Any]]:
     for t in _read_all():
         if t.get("id") == task_id:

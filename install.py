@@ -24,11 +24,10 @@ import common  # noqa: E402
 ORCH = SCRIPTS_DIR / "orchestrator.py"
 PYTHON = sys.executable
 
-REQUIRED_CLI = ["git", "claude", "gemini"]
-
 
 def check_requirements() -> None:
-    missing = [c for c in REQUIRED_CLI if shutil.which(c) is None]
+    required = ["git", "claude", common.SETTINGS.get("GEMINI_CLI_CMD", "agy")]
+    missing = [c for c in required if shutil.which(c) is None]
     if missing:
         print(f"[경고] PATH에서 다음 명령을 찾을 수 없습니다: {', '.join(missing)}")
         print("      설치 및 로그인(claude login / gemini 로그인) 후 다시 시도하세요.")
@@ -189,7 +188,9 @@ def main() -> None:
         sys.exit(1)
 
     print()
-    print(f'작업 추가: {PYTHON} {SCRIPTS_DIR / "add_task.py"} "작업 설명"')
+    print(f'작업 추가        : {PYTHON} {SCRIPTS_DIR / "add_task.py"} "작업 설명"')
+    print(f'프로젝트 통째로  : {PYTHON} {SCRIPTS_DIR / "plan_project.py"} "프로젝트 설명"')
+    print(f'한 번에 끝까지   : {PYTHON} {SCRIPTS_DIR / "run_project.py"} "프로젝트 설명"')
 
 
 if __name__ == "__main__":

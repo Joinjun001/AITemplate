@@ -36,6 +36,9 @@ DEFAULTS = {
     # 연습/테스트를 해보고 싶으면 예: "practice/todo-api" 같은 별도 브랜치로
     # 바꿔서 그 브랜치 안에서만 orchestrator가 작업하게 격리할 수 있다.
     "BASE_BRANCH": "main",
+    # run_project.py가 "할 일이 없다(쿨다운 중)"일 때 다음 시도까지 최소로
+    # 재우는 시간(초). 실제로는 쿨다운이 끝나는 시각까지 알아서 더 길게 잔다.
+    "RUN_LOOP_POLL_SEC": 20,
     # Gemini 계정으로 로그인해서 쓰는 CLI의 실제 실행 파일 이름.
     # Antigravity CLI(agy)를 쓰면 "agy", 독립 Gemini CLI를 쓰면 "gemini"로 바꾸세요.
     "GEMINI_CLI_CMD": "agy",
@@ -180,6 +183,20 @@ def is_cooling_down(name: str) -> bool:
         return True
     path.unlink(missing_ok=True)
     return False
+
+
+def seconds_until_cooldown_clears(name: str) -> float | None:
+    """쿨다운 중이면 남은 초, 아니면 None. run_project.py가 '할 일이 아예
+    없어서 쉬어야 하는' 동안 얼마나 오래 잘지 계산하는 데 쓴다."""
+    path = _cooldown_path(name)
+    if not path.exists():
+        return None
+    try:
+        until_ts = float(path.read_text(encoding="utf-8").strip())
+    except (ValueError, OSError):
+        return None
+    remaining = until_ts - time.time()
+    return remaining if remaining > 0 else None
 
 
 LIMIT_PATTERN = re.compile(
