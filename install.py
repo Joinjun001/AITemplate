@@ -33,6 +33,14 @@ def check_requirements() -> None:
         print("      설치 및 로그인(claude login / gemini 로그인) 후 다시 시도하세요.")
         print("      (일단 스케줄러 등록은 계속 진행합니다)\n")
 
+    dangerous = common.warn_dangerous_env()
+    if dangerous:
+        print(
+            f"[경고] {', '.join(dangerous)} 환경변수가 설정돼 있어서, claude CLI가 구독 로그인 "
+            "대신 이 값으로 우회될 수 있습니다. 의도한 게 아니라면 지금 지우고 나서 설치를 "
+            "계속하세요 (안 지우면 스케줄러가 무인으로 계속 그 값을 쓰게 됩니다).\n"
+        )
+
 
 def install_linux(interval_min: int) -> None:
     if shutil.which("systemctl") is None:

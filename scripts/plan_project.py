@@ -28,6 +28,7 @@ ARRAY_RE = re.compile(r"\[.*\]", re.DOTALL)
 
 
 def plan(description: str) -> list[dict]:
+    common.warn_dangerous_env()
     persona = (common.PROMPTS_DIR / "planner_persona.md").read_text(encoding="utf-8")
     prompt = f"""{persona}
 

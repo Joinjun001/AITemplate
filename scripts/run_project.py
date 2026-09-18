@@ -70,6 +70,7 @@ def _sleep_seconds_when_idle() -> float:
 
 
 def run(description: str | None) -> int:
+    common.warn_dangerous_env()
     if description:
         print("[run] Claude로 프로젝트를 작업 단위로 분해하는 중... (시간이 좀 걸릴 수 있습니다)")
         tasks = plan_project.plan(description)

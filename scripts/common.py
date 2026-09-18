@@ -73,6 +73,32 @@ def log(msg: str) -> None:
         pass
 
 
+# claude CLI를 구독 로그인(claude login)이 아니라 API 키/커스텀 엔드포인트로
+# 우회시키는 환경변수. 하나라도 설정돼 있으면 claude CLI가 Claude Pro/Max
+# 구독 세션을 아예 안 쓰고, 이 값이 가리키는 곳(공식 Anthropic API 종량제거나
+# 심지어 z.ai 같은 제3자 프록시)으로 요청을 보낸다. 무인 자동화 중에 이게
+# 모르는 새 켜져 있으면 예상 못 한 과금이나 "잔액 부족" 에러로 이어질 수 있어서
+# (실제로 겪은 사례: 예전에 연결해뒀던 z.ai용 ANTHROPIC_BASE_URL이 남아있어서
+# orchestrator가 Claude Pro 구독 대신 z.ai 유료 잔액을 쓰다가 잔액 소진으로
+# 막힌 적이 있다) 시작할 때마다 경고해준다.
+DANGEROUS_ENV_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN")
+
+
+def warn_dangerous_env() -> list[str]:
+    """위 환경변수 중 설정된 게 있으면 경고 로그를 남기고 이름 목록을 반환한다."""
+    found = [name for name in DANGEROUS_ENV_VARS if os.environ.get(name)]
+    if found:
+        names = ", ".join(found)
+        log(
+            f"⚠️ 경고: {names} 환경변수가 설정되어 있습니다. claude CLI가 구독 로그인이 "
+            "아니라 이 값으로 인증/우회되어, 의도하지 않은 과금이나 '잔액 부족(insufficient "
+            "balance)' 오류가 날 수 있습니다. 구독 토큰만 쓰려면 이 환경변수를 지우고 "
+            "(Windows PowerShell: [Environment]::SetEnvironmentVariable('이름', $null, "
+            "'User') 후 터미널 재시작) 'claude login'으로 다시 로그인하세요."
+        )
+    return found
+
+
 def get_os() -> str:
     """'linux' | 'macos' | 'windows' | 'other' 중 하나."""
     system = platform.system().lower()
