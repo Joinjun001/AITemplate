@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 import json
+import time
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
@@ -49,6 +51,23 @@ def next_with_status(status: str) -> Optional[dict[str, Any]]:
         if t.get("status") == status:
             return t
     return None
+
+
+def next_with_status_and_complexity(status: str, complexity: str) -> Optional[dict[str, Any]]:
+    for t in _read_all():
+        if t.get("status") == status and t.get("complexity") == complexity:
+            return t
+    return None
+
+
+def new_id(prefix: str = "task") -> str:
+    """타임스탬프 + 짧은 난수 접미사로 유일한 작업 id를 만든다.
+
+    plan_project.py처럼 한 번에 여러 작업을 연달아 추가할 때, 초 단위
+    타임스탬프만 쓰면 같은 초에 추가된 작업들의 id가 충돌할 수 있어서
+    난수 접미사를 붙인다.
+    """
+    return f"{prefix}-{time.strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
 
 
 def add(task: dict[str, Any]) -> None:

@@ -36,6 +36,7 @@ def run(task_id: str) -> int:
     branch = f"task/{task_id}"
     repo = common.REPO_DIR
 
+    common.ensure_clean_repo(repo)
     rc, out = common.run_cli(["git", "checkout", "main"], cwd=repo)
     if rc != 0:
         common.log(f"main 체크아웃 실패 ({task_id}): {out}")

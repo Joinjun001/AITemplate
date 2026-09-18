@@ -77,6 +77,16 @@ def get_os() -> str:
     return "other"
 
 
+def ensure_clean_repo(repo: Path) -> None:
+    """이전 실행이 도중에 죽어서 merge/rebase가 진행 중인 상태로 남아있으면
+    정리한다. 무인 자동화는 사람이 옆에서 'git merge --abort' 쳐줄 수 없으니,
+    각 워커가 git 작업을 시작하기 전에 방어적으로 호출한다. 정리할 게 없으면
+    조용히 아무 일도 안 한다."""
+    if (repo / ".git" / "MERGE_HEAD").exists():
+        log("이전 실행에서 남은 병합 충돌 상태 감지 -> git merge --abort로 정리")
+        run_cli(["git", "merge", "--abort"], cwd=repo)
+
+
 def gemini_cli_argv(prompt: str, skip_permissions: bool = False) -> list[str]:
     """Gemini 계열(agy 또는 독립 gemini CLI) 호출용 argv를 만든다.
 

@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import sys
-import time
 from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
@@ -44,7 +43,7 @@ def main() -> int:
     if complexity not in ("simple", "complex"):
         complexity = classify_with_gemini(desc)
 
-    task_id = f"task-{time.strftime('%Y%m%d%H%M%S')}"
+    task_id = q.new_id()
     q.add(
         {
             "id": task_id,

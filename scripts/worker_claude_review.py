@@ -70,6 +70,7 @@ def run(task_id: str) -> int:
             pass
 
     if verdict == "approve":
+        common.ensure_clean_repo(repo)
         rc, checkout_out = common.run_cli(["git", "checkout", "main"], cwd=repo)
         if rc != 0:
             common.log(f"main 체크아웃 실패 ({task_id}), 병합 보류: {checkout_out}")
@@ -78,8 +79,21 @@ def run(task_id: str) -> int:
             ["git", "merge", "--no-ff", branch, "-m", f"Merge {branch}: {desc}"], cwd=repo
         )
         if rc != 0:
-            common.log(f"병합 실패 ({task_id}): {merge_out}")
-            return 1
+            # 다른 작업이 먼저 병합되면서 main이 앞서가 있으면 충돌날 수 있다.
+            # 그대로 두면 매 사이클 똑같은 충돌을 반복하며 영원히 멈추니, 병합을
+            # 되돌리고 "최신 main 기준으로 다시 구현"하도록 todo로 돌려보낸다.
+            common.log(f"병합 충돌 ({task_id}), merge abort 후 재작업으로 돌림: {merge_out[-500:]}")
+            common.run_cli(["git", "merge", "--abort"], cwd=repo)
+            q.update(
+                task_id,
+                status="todo",
+                review_notes=[
+                    "다른 작업이 먼저 병합되면서 main과 충돌났습니다. "
+                    "최신 main 기준으로 다시 구현해주세요."
+                ],
+                retries=task.get("retries", 0) + 1,
+            )
+            return 0
         rc, branch_out = common.run_cli(["git", "branch", "-d", branch], cwd=repo)
         if rc != 0:
             common.log(f"작업 브랜치 삭제 실패 ({task_id}, 무시하고 계속): {branch_out}")

@@ -3,7 +3,9 @@
 주기적으로 이 스크립트를 한 번씩 실행합니다.
 
 1) Claude 쿨다운이 아니면 리뷰 대기(in_review) 작업을 리뷰
-2) todo 작업을 하나 꺼내서 complexity에 따라 Gemini/Claude 워커에 라우팅
+2) simple(Gemini) todo 하나, complex(Claude) todo 하나 — 최대 두 작업을 병행 진행
+   (같은 프로세스 안에서 순서대로 실행되는 것뿐이라 동시성 위험은 없고, 그냥
+   한 사이클에 Gemini/Claude가 각각 한 건씩 진전되게 해서 전체 처리 속도만 높인다)
 """
 from __future__ import annotations
 
@@ -23,6 +25,31 @@ def _run_worker(script_name: str, task_id: str) -> None:
     proc = subprocess.run([sys.executable, str(script), task_id])
     if proc.returncode != 0:
         common.log(f"{script_name} 비정상 종료 (task {task_id}, code {proc.returncode})")
+
+
+def _process_bucket(complexity: str, cooldown_name: str, worker_script: str) -> None:
+    """지정된 complexity의 todo 작업을 하나 찾아서 처리한다(없으면 그냥 로그만)."""
+    task = q.next_with_status_and_complexity("todo", complexity)
+    if not task:
+        common.log(f"{complexity} todo 작업 없음")
+        return
+
+    task_id = task["id"]
+    retries = task.get("retries", 0)
+    max_retries = common.SETTINGS["MAX_RETRIES"]
+
+    if retries >= max_retries:
+        common.log(f"재시도 한도({max_retries}) 초과 -> blocked 처리: {task_id} (review_notes 확인 후 수동 조치)")
+        q.update(task_id, status="blocked")
+        return
+
+    if common.is_cooling_down(cooldown_name):
+        common.log(f"{cooldown_name} 쿨다운 중, {task_id} 는 todo로 유지")
+        return
+
+    q.update(task_id, status="in_progress")
+    common.log(f"{worker_script} 실행: {task_id}")
+    _run_worker(worker_script, task_id)
 
 
 def main() -> int:
@@ -46,40 +73,10 @@ def main() -> int:
         else:
             common.log("Claude 쿨다운 중이라 리뷰는 건너뜀")
 
-        # 2) 새 구현 작업
-        todo_task = q.next_with_status("todo")
-        if not todo_task:
-            common.log("todo 작업 없음")
-            common.log("===== orchestrator 사이클 종료 =====")
-            return 0
-
-        task_id = todo_task["id"]
-        complexity = todo_task.get("complexity", "complex")
-        retries = todo_task.get("retries", 0)
-        max_retries = common.SETTINGS["MAX_RETRIES"]
-
-        if retries >= max_retries:
-            common.log(f"재시도 한도({max_retries}) 초과 -> blocked 처리: {task_id} (review_notes 확인 후 수동 조치)")
-            q.update(task_id, status="blocked")
-            common.log("===== orchestrator 사이클 종료 =====")
-            return 0
-
-        q.update(task_id, status="in_progress")
-
-        if complexity == "simple":
-            if common.is_cooling_down("gemini"):
-                common.log(f"Gemini 쿨다운 중, {task_id} 는 todo로 되돌림")
-                q.update(task_id, status="todo")
-            else:
-                common.log(f"Gemini 워커 실행: {task_id}")
-                _run_worker("worker_gemini.py", task_id)
-        else:
-            if common.is_cooling_down("claude"):
-                common.log(f"Claude 쿨다운 중, {task_id} 는 todo로 되돌림")
-                q.update(task_id, status="todo")
-            else:
-                common.log(f"Claude 구현 워커 실행: {task_id}")
-                _run_worker("worker_claude_impl.py", task_id)
+        # 2) 새 구현 작업: simple(Gemini) 한 건 + complex(Claude) 한 건을 같은
+        #    사이클에서 순서대로 진행 (사이클당 최대 1건이던 이전 버전보다 2배 빠르게 진행됨)
+        _process_bucket("simple", "gemini", "worker_gemini.py")
+        _process_bucket("complex", "claude", "worker_claude_impl.py")
 
         common.log("===== orchestrator 사이클 종료 =====")
         return 0

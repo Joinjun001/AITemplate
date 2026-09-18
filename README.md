@@ -7,6 +7,8 @@ CLI, `agy`)를 조합해 작업 큐를 자동으로 처리하는 셀프호스팅
 
 - **Claude**: 복잡한 설계 판단이 필요한 구현 + 최종 코드 리뷰 (Claude Pro/Max 구독 토큰)
 - **Gemini(agy)**: 토큰이 넉넉한 대량/단순 작업 처리 + 작업 난이도 자동 분류 (Gemini Pro/Ultra 구독 토큰)
+- **plan_project.py**: 프로젝트 설명 하나를 던지면 Claude가 여러 작업으로 쪼개서 큐에
+  통째로 등록 — 작업을 하나씩 손으로 넣을 필요 없이 프로젝트 전체를 맡길 수 있습니다
 - **OS 스케줄러**: 사용량 한도(토큰) 소진으로 멈춘 작업을, 한도가 풀리는 대로 자동 재개
 
 > **왜 agy인가**: [Antigravity CLI](https://antigravity.google/download#antigravity-cli)(명령어
@@ -124,19 +126,23 @@ python install.py
 `tasks/queue.jsonl`에 `status: "todo"`인 항목이 한 줄 추가됩니다. complexity를 안 정했으면
 그 자리에서 `agy`를 한 번 불러 simple/complex를 분류합니다.
 
-**2. 스케줄러가 깨어남** — 5분 뒤(또는 다음 스케줄) `orchestrator.py`가 실행됩니다. 매 사이클은
-이렇게 흘러갑니다:
+**2. 스케줄러가 깨어남** — 5분 뒤(또는 다음 스케줄) `orchestrator.py`가 실행됩니다. 한 사이클은
+리뷰 1건 + simple(Gemini) todo 1건 + complex(Claude) todo 1건, 이렇게 최대 세 가지 일을
+순서대로 처리합니다(둘 다 있으면 같은 사이클에 같이 진행되어, 작업이 많이 쌓여 있을 때
+훨씬 빨리 끝까지 진행됩니다):
 
 ```
 [04:16:14] ===== orchestrator 사이클 시작 =====
-[04:16:14] 리뷰 대기 작업 없음                              <- in_review 작업부터 먼저 확인
-[04:16:14] Claude 구현 워커 실행: task-20260919041614        <- todo 작업을 하나 꺼내서 라우팅
-[04:16:15] Claude 구현 완료, 리뷰 대기로 전환: task-...       <- 커밋 후 status: in_review
+[04:16:14] 리뷰 대기 작업 없음
+[04:16:14] worker_gemini.py 실행: task-...b5b972              <- simple todo 하나
+[04:16:14] Gemini 작업 완료, 리뷰 대기로 전환: task-...b5b972
+[04:16:14] worker_claude_impl.py 실행: task-...0046bb          <- complex todo 하나
+[04:16:15] Claude 구현 완료, 리뷰 대기로 전환: task-...0046bb
 [04:16:15] ===== orchestrator 사이클 종료 =====
 ```
 
 내부적으로는: `git checkout -B task/<id> main` → 페르소나 프롬프트로 `claude -p "..."`
-(또는 simple이면 `agy -p "..."`) 실행 → 파일이 바뀌었으면 `git commit` → 큐 상태를
+(simple이면 `agy -p "..."`) 실행 → 파일이 바뀌었으면 `git commit` → 큐 상태를
 `in_review`로 변경. 만약 이 시점에 Claude/Gemini 사용량 한도 메시지가 감지되면, 커밋 없이
 `todo`로 되돌리고 `state/claude_until`(또는 `gemini_until`)에 리셋 예상 시각을 적어둔 뒤
 조용히 종료합니다 — 다음 사이클들은 그 시각이 지날 때까지 이 작업을 계속 건너뜁니다.
@@ -167,9 +173,15 @@ python install.py
 커밋이 그대로 히스토리에 남아서, 나중에 "이 변경 누가/왜 했는지"를 리뷰 코멘트와 함께
 추적할 수 있습니다.
 
-**한 사이클에 일어나는 일 정리**: (리뷰 대기 있으면 리뷰 1건) → (todo 있으면 구현 1건) 순서로
-최대 2번의 CLI 호출만 하고 끝냅니다. 작업이 여러 개 쌓여 있어도 사이클당 하나씩만 처리하기
-때문에, 확인하고 싶으면 `state/orchestrator.log`를 tail 하면서 지켜보시면 됩니다.
+**만약 병합 중 충돌이 나면**(같은 사이클에 여러 작업을 진행하다 보면, 다른 작업이 먼저
+병합되면서 main이 앞서가 있어 겹치는 파일을 건드린 경우 충돌이 날 수 있습니다) 자동으로
+`git merge --abort`로 정리하고, "main과 충돌났으니 최신 기준으로 다시 구현해달라"는
+review_notes와 함께 `todo`로 돌려보냅니다. 사람이 개입할 필요 없이 다음 번 구현 시도에서
+최신 `main`을 기준으로 다시 브랜치를 파기 때문에 대부분 그 다음엔 깨끗하게 병합됩니다.
+
+**한 사이클에 일어나는 일 정리**: 리뷰 대기 있으면 리뷰 1건 → simple todo 있으면 구현 1건 →
+complex todo 있으면 구현 1건, 이렇게 최대 3번의 CLI 호출을 하고 끝냅니다. 확인하고 싶으면
+`state/orchestrator.log`를 tail 하면서 지켜보시면 됩니다.
 
 ```bash
 tail -f state/orchestrator.log
@@ -196,6 +208,43 @@ python scripts/add_task.py "결제 모듈 리팩터링 및 예외 처리 개선"
  "status": "todo|in_progress|in_review|done|blocked",
  "assignee": null, "retries": 0, "review_notes": ""}
 ```
+
+## 프로젝트 통째로 맡기기 (자동 작업 분해)
+
+작업을 하나씩 `add_task.py`로 넣는 대신, 프로젝트 설명 하나를 던지면 Claude가 알아서
+여러 개의 작업으로 쪼개서 큐에 한 번에 넣어주는 `plan_project.py`가 있습니다.
+
+```bash
+python scripts/plan_project.py "할일 관리 REST API 서버를 Flask + SQLite로 만들어줘.
+CRUD 엔드포인트, 입력 검증, pytest 테스트, README까지 포함해서."
+
+# 스펙이 길면 파일로:
+python scripts/plan_project.py --file project_spec.txt
+```
+
+내부적으로는 `prompts/planner_persona.md` 페르소나로 Claude를 한 번 불러서 JSON 배열
+(`[{"desc": "...", "complexity": "simple|complex"}, ...]`)을 받아 그대로 큐에 순서대로
+추가합니다. **이 호출은 파일을 읽거나 쓰지 않는 순수 텍스트 추론이라
+`--dangerously-skip-permissions`를 주지 않습니다** — 계획 단계에서는 저장소를 건드릴
+권한 자체를 안 주는 게 안전하다고 판단했습니다.
+
+몇 가지 참고할 점:
+- 배열 순서 = 처리 순서입니다. 플래너는 "뒤 작업이 앞 작업 결과물에 의존하면 순서대로
+  넣으라"는 지시를 받지만, 완벽하지 않을 수 있으니 결과를 한 번 훑어보고 이상하면
+  `tasks/queue.jsonl`을 직접 편집해서 순서나 내용을 고쳐도 됩니다.
+- 작업 개수가 많으면(보통 5~20개) 완료까지 여러 사이클이 걸립니다. 기본 5분 간격이면
+  꽤 오래 걸리니, 빨리 끝까지 보고 싶으면 `CYCLE_INTERVAL_MIN`을 줄이거나(재설치 필요),
+  아니면 그냥 터미널에서 `python scripts/orchestrator.py`를 수동으로 반복 실행하세요:
+  ```bash
+  # Linux/macOS
+  while true; do python scripts/orchestrator.py; sleep 10; done
+  # Windows PowerShell
+  while ($true) { python scripts/orchestrator.py; Start-Sleep -Seconds 10 }
+  ```
+- 사용량 한도에 걸리면 평소처럼 조용히 쉬었다가 자동으로 이어집니다. 큰 프로젝트를
+  통째로 맡기면 그 하루 한도를 거의 다 쓰게 될 수 있다는 뜻이기도 합니다.
+- 완료된 작업들은 각각 별도 커밋 + 병합 커밋으로 남기 때문에, `git log --oneline`으로
+  전체 프로젝트가 어떤 순서로 만들어졌는지 그대로 다시 볼 수 있습니다.
 
 ## 재시도/차단 정책
 
