@@ -263,6 +263,15 @@ python scripts/run_project.py "프로젝트 설명"
 python scripts/plan_project.py --file project_spec.txt
 ```
 
+> ⚠️ **스펙 파일 이름은 `*.spec.txt`로 짓거나 `specs/` 폴더 안에 두세요** (예:
+> `project.spec.txt`, `specs/game.txt`). 둘 다 `.gitignore`에 있어서 git이 추적하지
+> 않습니다. 그냥 저장소 루트에 평범한 이름(`project_spec.txt` 등)으로 추적 안 된 채
+> 놔두면, worker들이 작업 커밋 시 실행하는 `git add -A`에 같이 딸려 들어갔다가, 그
+> 커밋을 만든 작업 브랜치가 아닌 다른 브랜치로 working directory가 넘어가는 순간
+> 파일이 감쪽같이 사라진 것처럼 보이는 사고가 실제로 있었습니다(`FileNotFoundError`).
+> 어차피 `--file`은 계획 단계에서 한 번 읽어서 큐에 다 옮겨 넣고 나면 더 필요
+> 없으니, 이후로는 `--resume`으로 이어서 진행하세요(파일이 사라졌어도 문제없습니다).
+
 **이 호출(계획 단계)은 파일을 읽거나 쓰지 않는 순수 텍스트 추론이라
 `--dangerously-skip-permissions`를 주지 않습니다** — 계획 단계에서는 저장소를 건드릴
 권한 자체를 안 주는 게 안전하다고 판단했습니다.

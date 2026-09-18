@@ -10,3 +10,13 @@ __pycache__/
 # 브랜치를 넘나들며 이 파일을 갱신하는데, git이 추적하는 파일이면 다른 브랜치와
 # 내용이 달라질 때 checkout이 막혀버립니다(untracked면 브랜치를 넘나들어도 안전).
 tasks/queue.jsonl
+
+# plan_project.py/run_project.py --file로 넘기는 프로젝트 스펙 입력 파일.
+# 저장소 루트에 추적되지 않는 파일로 놔두면, worker_gemini.py/worker_claude_impl.py가
+# 커밋 시 실행하는 `git add -A`에 같이 딸려 들어갔다가, 그 커밋을 만든 작업
+# 브랜치가 아닌 다른 브랜치로 working directory가 넘어가는 순간 파일이 사라진
+# 것처럼 보이는 사고가 실제로 있었습니다(FileNotFoundError). 스펙 파일은
+# `*.spec.txt`로 이름 짓거나 `specs/` 폴더 안에 두세요 — 둘 다 git이 아예
+# 추적하지 않아서 어떤 작업 커밋에도 딸려 들어가지 않습니다.
+*.spec.txt
+specs/
