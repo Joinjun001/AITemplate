@@ -5,10 +5,36 @@ CLI, `agy`)를 조합해 작업 큐를 자동으로 처리하는 셀프호스팅
 **Linux / macOS / Windows에서 같은 코드로 동작**하도록 순수 Python(표준 라이브러리만)으로
 작성했고, OS별 스케줄러(systemd / launchd / 작업 스케줄러)만 자동으로 갈아 끼웁니다.
 
+## 🚀 바로 시작하기 (입력할 명령어)
+
+```bash
+# 0) 최초 1회 — 설치 (OS를 자동 감지해서 알맞은 스케줄러에 orchestrator.py를 등록)
+python install.py
+
+# 1) 작업 하나만 추가하고 싶을 때 (백그라운드 스케줄러가 순서대로 처리)
+python scripts/add_task.py "작업 설명"
+
+# 2) 프로젝트 하나를 통째로 맡기고, 백그라운드로 알아서 진행시키고 싶을 때
+python scripts/plan_project.py "프로젝트 설명"
+
+# 3) 지금 터미널에서 "한 번 실행 → 완성될 때까지" 끝까지 지켜보고 싶을 때 (★ 가장 많이 씀)
+python scripts/run_project.py "할일 관리 REST API 서버를 Flask + SQLite로 만들어줘. CRUD 엔드포인트, 입력 검증, pytest 테스트, README까지 포함해서."
+
+# 중단했다가 이어서 진행하고 싶을 때
+python scripts/run_project.py --resume
+```
+
+진행 상황은 `state/orchestrator.log`에서 실시간으로 볼 수 있습니다(`tail -f state/orchestrator.log`).
+
+> ⚠️ **위 명령어는 반드시 `claude login`/Google 로그인으로 인증해 둔 실제 사용자 본인의
+> 컴퓨터에서 직접 실행하세요.** `claude`/`agy`는 그 컴퓨터에 로그인된 구독(Claude Pro,
+> Gemini Pro/Ultra)을 그대로 쓰기 때문에, 파일만 옮겨주는 원격 브리지나 다른 서버에서는
+> 대신 실행해줄 수 없습니다.
+
 - **Claude**: 복잡한 설계 판단이 필요한 구현 + 최종 코드 리뷰 (Claude Pro/Max 구독 토큰)
 - **Gemini(agy)**: 토큰이 넉넉한 대량/단순 작업 처리 + 작업 난이도 자동 분류 (Gemini Pro/Ultra 구독 토큰)
-- **plan_project.py**: 프로젝트 설명 하나를 던지면 Claude가 여러 작업으로 쪼개서 큐에
-  통째로 등록 — 작업을 하나씩 손으로 넣을 필요 없이 프로젝트 전체를 맡길 수 있습니다
+- **plan_project.py / run_project.py**: 프로젝트 설명 하나를 던지면 Claude가 여러 작업으로
+  쪼개서 큐에 통째로 등록 — 작업을 하나씩 손으로 넣을 필요 없이 프로젝트 전체를 맡길 수 있습니다
 - **OS 스케줄러**: 사용량 한도(토큰) 소진으로 멈춘 작업을, 한도가 풀리는 대로 자동 재개
 
 > **왜 agy인가**: [Antigravity CLI](https://antigravity.google/download#antigravity-cli)(명령어
@@ -23,7 +49,7 @@ CLI, `agy`)를 조합해 작업 큐를 자동으로 처리하는 셀프호스팅
 > 씁니다. 이 템플릿에서 "Claude 역할"은 반드시 실제 `claude` CLI(Claude Code, `claude login`)로만
 > 실행되어, 사용자님의 진짜 Claude Pro 구독 5시간 한도를 쓰도록 되어 있습니다.
 
-> 이 저장소는 실행 가능한 뼈대(스킬레톤)입니다. 실제 프로젝트 저장소 안에 그대로
+> 이 저장소는 실행 가능한 뼈대(스켈레톤)입니다. 실제 프로젝트 저장소 안에 그대로
 > 복사해 넣거나, 스크립트들이 대상 프로젝트를 가리키도록 경로를 맞춰 쓰세요.
 
 ## 왜 이런 구조인가 (요약)
@@ -44,33 +70,36 @@ CLI, `agy`)를 조합해 작업 큐를 자동으로 처리하는 셀프호스팅
 ## 아키텍처
 
 ```
-OS 스케줄러 (예: 5분마다)
-  systemd timer(Linux) / launchd(macOS) / 작업 스케줄러(Windows)
-        │
-        ▼
-  scripts/orchestrator.py   -- 파일 락으로 중복 실행 방지
-        │
-        ├─ state/claude_until, state/gemini_until 로 쿨다운(한도) 확인
-        │
-        ▼
-  tasks/queue.jsonl (todo / in_progress / in_review / done / blocked)
-        │
-   ┌────┴─────────────────┐
-   ▼                       ▼
-worker_gemini.py(agy)    worker_claude_impl.py
-(complexity=simple)      (complexity=complex)
-   │                       │
-   └───────────┬───────────┘
-               ▼
-   task/<id> 브랜치에 커밋, status=in_review
-               ▼
-   worker_claude_review.py  ← 구현자와 분리된 새 세션, diff만 보고 판단
-               │
-        ┌──────┴───────┐
-        ▼               ▼
-     approve        changes_requested
-        │               │
-     main 병합      todo로 되돌림(+review_notes, retries+1)
+OS 스케줄러 (예: 5분마다)                    run_project.py
+  systemd timer(Linux)                     (터미널에서 직접 실행,
+  launchd(macOS)                            같은 사이클을 끝날 때까지
+  작업 스케줄러(Windows)                     이 프로세스 안에서 반복)
+        │                                          │
+        └───────────────────┬──────────────────────┘
+                             ▼
+                  scripts/orchestrator.py   -- 파일 락으로 중복 실행 방지
+                             │
+                    state/claude_until, state/gemini_until 로 쿨다운(한도) 확인
+                             ▼
+                  tasks/queue.jsonl (todo / in_progress / in_review / done / blocked)
+                             │
+                 ┌───────────┴─────────────┐
+                 ▼                          ▼
+       worker_gemini.py(agy)       worker_claude_impl.py
+       (complexity=simple)         (complexity=complex)
+                 │                          │
+                 └────────────┬─────────────┘
+                               ▼
+                task/<id> 브랜치에 커밋, status=in_review
+                               ▼
+                worker_claude_review.py  ← 구현자와 분리된 새 세션, diff만 보고 판단
+                               │
+                        ┌──────┴───────┐
+                        ▼               ▼
+                     approve        changes_requested
+                        │               │
+                  BASE_BRANCH 병합   todo로 되돌림(+review_notes, retries+1)
+                  (기본값 main)
 ```
 
 ## 사전 준비 (OS 공통)
@@ -141,14 +170,14 @@ python install.py
 [04:16:15] ===== orchestrator 사이클 종료 =====
 ```
 
-내부적으로는: `git checkout -B task/<id> main` → 페르소나 프롬프트로 `claude -p "..."`
+내부적으로는: `git checkout -B task/<id> <BASE_BRANCH>` → 페르소나 프롬프트로 `claude -p "..."`
 (simple이면 `agy -p "..."`) 실행 → 파일이 바뀌었으면 `git commit` → 큐 상태를
 `in_review`로 변경. 만약 이 시점에 Claude/Gemini 사용량 한도 메시지가 감지되면, 커밋 없이
 `todo`로 되돌리고 `state/claude_until`(또는 `gemini_until`)에 리셋 예상 시각을 적어둔 뒤
 조용히 종료합니다 — 다음 사이클들은 그 시각이 지날 때까지 이 작업을 계속 건너뜁니다.
 
 **3. 다음 사이클: 리뷰** — `in_review` 상태인 작업을 발견하면, 구현자와 완전히 분리된 새
-`claude -p` 세션이 `git diff main..task/<id>`만 보고 판단합니다:
+`claude -p` 세션이 `git diff <BASE_BRANCH>..task/<id>`만 보고 판단합니다:
 
 ```
 [04:16:20] 리뷰 실행: task-20260919041614
@@ -168,16 +197,16 @@ python install.py
 도달할 때까지 반복되고, 그래도 안 되면 `status: blocked`로 멈춰서 더 이상 자동으로 건드리지
 않습니다 — 이때는 `tasks/queue.jsonl`의 `review_notes`를 열어서 사람이 직접 봐야 합니다.
 
-**5. 완료** — 승인되면 `task/<id>` 브랜치가 `--no-ff`로 `main`에 병합되고, 브랜치는 삭제되고,
-작업은 `status: done`으로 남습니다. `git log --oneline --graph`로 보면 구현 커밋과 병합
-커밋이 그대로 히스토리에 남아서, 나중에 "이 변경 누가/왜 했는지"를 리뷰 코멘트와 함께
-추적할 수 있습니다.
+**5. 완료** — 승인되면 `task/<id>` 브랜치가 `--no-ff`로 기준 브랜치(`BASE_BRANCH`, 기본 `main`)에
+병합되고, 브랜치는 삭제되고, 작업은 `status: done`으로 남습니다. `git log --oneline --graph`로
+보면 구현 커밋과 병합 커밋이 그대로 히스토리에 남아서, 나중에 "이 변경 누가/왜 했는지"를 리뷰
+코멘트와 함께 추적할 수 있습니다.
 
 **만약 병합 중 충돌이 나면**(같은 사이클에 여러 작업을 진행하다 보면, 다른 작업이 먼저
-병합되면서 main이 앞서가 있어 겹치는 파일을 건드린 경우 충돌이 날 수 있습니다) 자동으로
-`git merge --abort`로 정리하고, "main과 충돌났으니 최신 기준으로 다시 구현해달라"는
+병합되면서 기준 브랜치가 앞서가 있어 겹치는 파일을 건드린 경우 충돌이 날 수 있습니다) 자동으로
+`git merge --abort`로 정리하고, "기준 브랜치와 충돌났으니 최신 기준으로 다시 구현해달라"는
 review_notes와 함께 `todo`로 돌려보냅니다. 사람이 개입할 필요 없이 다음 번 구현 시도에서
-최신 `main`을 기준으로 다시 브랜치를 파기 때문에 대부분 그 다음엔 깨끗하게 병합됩니다.
+최신 기준 브랜치를 기준으로 다시 브랜치를 파기 때문에 대부분 그 다음엔 깨끗하게 병합됩니다.
 
 **한 사이클에 일어나는 일 정리**: 리뷰 대기 있으면 리뷰 1건 → simple todo 있으면 구현 1건 →
 complex todo 있으면 구현 1건, 이렇게 최대 3번의 CLI 호출을 하고 끝냅니다. 확인하고 싶으면
@@ -198,7 +227,7 @@ python scripts/add_task.py "결제 모듈 리팩터링 및 예외 처리 개선"
 ```
 
 `tasks/queue.jsonl`은 의도적으로 `.gitignore`에 들어 있어 버전관리되지 않습니다. 워커들이
-`orchestrator.py` 실행 중 `task/<id>` 브랜치와 `main`을 오가며 이 파일을 갱신하는데, git이
+`orchestrator.py` 실행 중 `task/<id>` 브랜치와 기준 브랜치를 오가며 이 파일을 갱신하는데, git이
 추적하는 파일이면 브랜치마다 내용이 달라질 때 `git checkout`이 막혀버리기 때문입니다
 (직접 겪은 문제라 템플릿에 미리 반영해뒀습니다). 예시/참고용인 `tasks/queue.example.jsonl`만
 커밋됩니다. 큐 포맷(JSONL, 한 줄에 작업 하나):
@@ -212,19 +241,29 @@ python scripts/add_task.py "결제 모듈 리팩터링 및 예외 처리 개선"
 ## 프로젝트 통째로 맡기기 (자동 작업 분해)
 
 작업을 하나씩 `add_task.py`로 넣는 대신, 프로젝트 설명 하나를 던지면 Claude가 알아서
-여러 개의 작업으로 쪼개서 큐에 한 번에 넣어주는 `plan_project.py`가 있습니다.
+여러 개의 작업으로 쪼개서 큐에 한 번에 넣어주는 스크립트가 두 개 있습니다. 프로젝트를 어떻게
+분해하는지는 둘 다 동일하고(`prompts/planner_persona.md` 페르소나로 Claude를 한 번 불러
+JSON 배열 `[{"desc": "...", "complexity": "simple|complex"}, ...]`을 받음), **그 다음에
+누가 처리하느냐**만 다릅니다.
+
+|  | `plan_project.py` | `run_project.py` |
+|---|---|---|
+| 하는 일 | 작업을 쪼개서 큐에 넣고 **바로 종료** | 큐에 넣은 뒤 **완료될 때까지 이 터미널에서 계속 진행** |
+| 실제 처리 주체 | 이후 백그라운드 스케줄러(`install.py`로 등록, 기본 5분 간격) | 이 명령을 실행 중인 프로세스 자신 |
+| 언제 쓰나 | 컴퓨터를 며칠씩 켜두고 여러 프로젝트를 틈틈이 처리하고 싶을 때 | 지금 프로젝트 하나를 몰아서 끝까지 보고 싶을 때 (★ 보통 이걸 씁니다) |
 
 ```bash
-python scripts/plan_project.py "할일 관리 REST API 서버를 Flask + SQLite로 만들어줘.
-CRUD 엔드포인트, 입력 검증, pytest 테스트, README까지 포함해서."
+# 큐에 등록만 하고 끝 (스케줄러가 알아서 처리)
+python scripts/plan_project.py "프로젝트 설명"
 
-# 스펙이 길면 파일로:
+# 등록 + 끝날 때까지 이 터미널에서 계속 진행 (Ctrl+C로 중단, --resume으로 재개)
+python scripts/run_project.py "프로젝트 설명"
+
+# 스펙이 길면 파일로 (둘 다 지원)
 python scripts/plan_project.py --file project_spec.txt
 ```
 
-내부적으로는 `prompts/planner_persona.md` 페르소나로 Claude를 한 번 불러서 JSON 배열
-(`[{"desc": "...", "complexity": "simple|complex"}, ...]`)을 받아 그대로 큐에 순서대로
-추가합니다. **이 호출은 파일을 읽거나 쓰지 않는 순수 텍스트 추론이라
+**이 호출(계획 단계)은 파일을 읽거나 쓰지 않는 순수 텍스트 추론이라
 `--dangerously-skip-permissions`를 주지 않습니다** — 계획 단계에서는 저장소를 건드릴
 권한 자체를 안 주는 게 안전하다고 판단했습니다.
 
@@ -234,45 +273,22 @@ python scripts/plan_project.py --file project_spec.txt
   `tasks/queue.jsonl`을 직접 편집해서 순서나 내용을 고쳐도 됩니다.
 - 사용량 한도에 걸리면 평소처럼 조용히 쉬었다가 자동으로 이어집니다. 큰 프로젝트를
   통째로 맡기면 그 하루 한도를 거의 다 쓰게 될 수 있다는 뜻이기도 합니다.
+  `run_project.py`는 쿨다운이 풀리는 시각까지 계산해서 그때 자동으로 다시 시도하므로,
+  대형 프로젝트라면 5시간짜리 Claude 한도를 몇 번 거쳐가며 몇 시간 동안 터미널이 켜져
+  있을 수도 있습니다.
 - 완료된 작업들은 각각 별도 커밋 + 병합 커밋으로 남기 때문에, `git log --oneline`으로
   전체 프로젝트가 어떤 순서로 만들어졌는지 그대로 다시 볼 수 있습니다.
-
-### 터미널에서 한 번만 실행해서 완성까지 (`run_project.py`)
-
-`plan_project.py`는 작업을 큐에 넣기만 하고 끝나기 때문에, 실제로 다 완성되려면
-스케줄러(백그라운드, 기본 5분 간격)가 여러 번 돌거나 `orchestrator.py`를 사람이
-반복 실행해줘야 합니다. **터미널에서 명령 한 번으로 끝까지("완성될 때까지")
-자동으로 진행시키고 싶으면 `run_project.py`를 쓰세요**:
-
-```bash
-python scripts/run_project.py "할일 관리 REST API 서버를 Flask + SQLite로 만들어줘.
-CRUD 엔드포인트, 입력 검증, pytest 테스트, README까지 포함해서."
-```
-
-내부적으로 `plan_project.py`와 똑같이 프로젝트를 작업으로 쪼갠 뒤, 큐의 모든 작업이
-`done` 또는 `blocked`가 될 때까지 `orchestrator.py`의 한 사이클(리뷰 1건 + 단순 1건 +
-복잡 1건)을 이 프로세스 안에서 계속 반복합니다. 즉 이 명령을 실행해둔 터미널을 켜둔
-채로 기다리기만 하면(또는 다른 일을 하다가 나중에 돌아오면) 그 사이 자동으로 끝까지
-진행되어 있습니다. 사용량 한도에 걸리면 조용히 대기했다가 한도가 풀리는 시점에
-자동으로 이어가므로, 대형 프로젝트라면 5시간짜리 Claude 한도를 몇 번 거쳐가며
-몇 시간 동안 켜져 있을 수도 있습니다.
-
-- `Ctrl+C`로 언제든 중단해도 진행 상황은 `tasks/queue.jsonl`에 그대로 남아있어서,
-  `python scripts/run_project.py --resume`로 새로 계획하지 않고 이어서 진행할 수
-  있습니다.
-- 컴퓨터를 끄면 당연히 멈춥니다 — "컴퓨터를 계속 켜두고 며칠에 걸쳐 여러 프로젝트를
-  틈틈이 처리"하는 시나리오는 `install.py`로 등록하는 백그라운드 스케줄러가 맡고,
-  `run_project.py`는 "지금 프로젝트 하나를 몰아서 끝까지" 보고 싶을 때 씁니다. 백그라운드
-  스케줄러가 이미 설치되어 있어도 `run_project.py`를 동시에 실행해서 상관없습니다
-  (같은 파일 락을 공유해서 서로 겹치지 않게 비켜갑니다).
-- 끝나면 완료/차단(blocked) 건수를 요약해서 보여주고, `blocked`가 있으면 어떤
-  작업이 왜 막혔는지(`review_notes`)까지 함께 출력합니다.
+- `run_project.py`는 백그라운드 스케줄러가 이미 설치되어 있어도 동시에 실행해서 상관없습니다
+  (같은 파일 락을 공유해서 서로 겹치지 않게 비켜갑니다). 다만 로그가 섞여 보기 불편하니
+  실제로는 하나만 켜두는 걸 권장합니다.
+- `run_project.py`는 끝나면 완료/차단(blocked) 건수를 요약해서 보여주고, `blocked`가 있으면
+  어떤 작업이 왜 막혔는지(`review_notes`)까지 함께 출력합니다.
 
 ## 연습 브랜치로 안전하게 실습해보기
 
 `main`을 바로 쓰기 전에, 별도 브랜치 안에서만 orchestrator가 작업하도록 격리해서
-연습해볼 수 있습니다. `BASE_BRANCH` 설정 덕분에 실제 템플릿 기록(`main`)은 전혀
-건드리지 않습니다.
+연습해볼 수 있습니다. `BASE_BRANCH` 설정 덕분에 실제 히스토리(`main`)는 전혀 건드리지
+않습니다.
 
 ```bash
 # 1) main에서 연습용 브랜치를 하나 판다
@@ -280,34 +296,19 @@ git checkout -b practice/todo-api main
 
 # 2) config/settings.json 에서 BASE_BRANCH를 그 브랜치로 지정
 #    (config/settings.json은 .gitignore에 있어서 커밋되지 않습니다)
-{
-  "BASE_BRANCH": "practice/todo-api"
-}
+echo '{"BASE_BRANCH": "practice/todo-api"}' > config/settings.json
 
-# 3) 프로젝트를 통째로 맡기고, 끝날 때까지 한 번에 지켜본다
-python scripts/run_project.py "할일 관리 REST API 서버를 Flask + SQLite로 만들어줘.
-CRUD 엔드포인트, 입력 검증, pytest 테스트, README까지 포함해서."
+# 3) 위 "바로 시작하기"의 run_project.py 명령을 그대로 실행
+python scripts/run_project.py "할일 관리 REST API 서버를 Flask + SQLite로 만들어줘. CRUD 엔드포인트, 입력 검증, pytest 테스트, README까지 포함해서."
 ```
 
 이렇게 하면 `task/<id>` 브랜치들은 전부 `practice/todo-api`에서 갈라져 나와
-`practice/todo-api`로 다시 병합되고, `main`은 그대로 남습니다. 다 끝난 뒤
-결과가 마음에 들면 `git checkout main && git merge --no-ff practice/todo-api`로
-가져오고, 마음에 안 들면 그냥 `git branch -D practice/todo-api`로 지우면 됩니다
-(단, `queue.jsonl`은 브랜치와 무관하게 파일시스템에 그대로 남는 상태이므로,
-연습이 끝나면 `tasks/queue.jsonl`을 비우고 `config/settings.json`의
-`BASE_BRANCH`를 다시 `"main"`으로 되돌리는 것을 잊지 마세요).
-
-**중요 — 이 CLI들은 반드시 실제 로그인된 컴퓨터에서 실행해야 합니다.**
-`plan_project.py`와 orchestrator가 내부적으로 부르는 `claude`/`agy`는 여러분이
-`claude login`/Google 로그인으로 인증해 둔 그 구독(Claude Pro, Gemini Pro)을
-그대로 사용합니다. 즉 이 파이프라인은 클라우드 어딘가의 대리 서버가 아니라,
-**여러분 컴퓨터의 실제 터미널(PowerShell/cmd/터미널)에서** 실행해야
-의미가 있습니다. 파일을 원격으로 옮겨주는 브리지는 폴더 내용을 읽고 쓸 수는
-있어도, 그 컴퓨터에 설치된 `claude`/`agy` 실행 파일이나 로그인 세션 자체에는
-접근할 수 없기 때문에, 이 실행만큼은 사람이 직접 그 컴퓨터에서 명령을 쳐야 합니다.
-대신 실행 후 `state/orchestrator.log`와 `tasks/queue.jsonl`은 파일이라서,
-다음에 그 내용을 공유해주면 로그만 보고도 무엇이 잘 됐고 무엇을 고쳐야
-하는지 분석해서 템플릿을 계속 개선할 수 있습니다.
+`practice/todo-api`로 다시 병합되고, `main`은 그대로 남습니다. 다 끝난 뒤 결과가
+마음에 들면 `git checkout main && git merge --no-ff practice/todo-api`로 가져오고,
+마음에 안 들면 그냥 `git branch -D practice/todo-api`로 지우면 됩니다(단, `queue.jsonl`은
+브랜치와 무관하게 파일시스템에 그대로 남는 상태이므로, 연습이 끝나면
+`tasks/queue.jsonl`을 비우고 `config/settings.json`의 `BASE_BRANCH`를 다시 `"main"`으로
+되돌리는 것을 잊지 마세요).
 
 ## 재시도/차단 정책
 
@@ -320,21 +321,16 @@ CRUD 엔드포인트, 입력 검증, pytest 테스트, README까지 포함해서
 `config/settings.json.example`을 `config/settings.json`으로 복사해서 값을 바꾸세요
 (이 파일은 `.gitignore`에 포함되어 커밋되지 않습니다).
 
-- `MAX_RETRIES`: 재시도 상한
-- `COOLDOWN_MIN_CLAUDE`: 리밋 메시지는 감지했는데 정확한 리셋 시각을 못 읽었을 때 기본 대기(분).
-  Claude Code는 롤링 5시간 한도라 기본값 300분.
-- `COOLDOWN_MIN_GEMINI`: 위와 동일하되 Gemini용. 보통 자정 기준 일일 한도라 짧게 잡았습니다.
-- `CYCLE_INTERVAL_MIN`: 스케줄러가 orchestrator를 부르는 주기(분). `install.py`를 다시 실행하면
-  반영됩니다.
-- `GEMINI_CLI_CMD`: Gemini 역할을 실행할 실제 명령어 이름. 기본값 `"agy"`(Antigravity CLI).
-  독립 `gemini` CLI로 바꾸려면 `"gemini"`로 설정하세요. 단, 독립 `gemini` CLI는
-  `--dangerously-skip-permissions` 플래그를 지원하지 않을 수 있으니, 바꾼 뒤
-  `scripts/common.py`의 `gemini_cli_argv`에서 그 플래그 추가 부분을 빼야 할 수도 있습니다.
-- `GEMINI_MODEL`: `agy --model`로 넘길 모델 이름(예: `"Gemini 3.1 Pro"`). 빈 문자열이면
-  계정 기본 모델을 씁니다. **Claude 모델 이름을 넣지 마세요** — 위 경고 참고.
-- `BASE_BRANCH`: 작업 브랜치의 기준이자 병합 대상 브랜치. 기본값 `"main"`. 연습/테스트를
-  할 때는 `"practice/todo-api"`처럼 별도 브랜치로 바꿔서 `main`을 건드리지 않고
-  격리해서 돌려볼 수 있습니다(바로 아래 "연습 브랜치로 안전하게 실습해보기" 참고).
+| 키 | 기본값 | 설명 |
+|---|---|---|
+| `MAX_RETRIES` | `3` | 재시도 상한 |
+| `COOLDOWN_MIN_CLAUDE` | `300` | 리밋 메시지는 감지했는데 정확한 리셋 시각을 못 읽었을 때 기본 대기(분). Claude Code는 롤링 5시간 한도라 기본값 300분 |
+| `COOLDOWN_MIN_GEMINI` | `60` | 위와 동일하되 Gemini용. 보통 자정 기준 일일 한도라 짧게 잡음 |
+| `CYCLE_INTERVAL_MIN` | `5` | 스케줄러가 orchestrator를 부르는 주기(분). `install.py`를 다시 실행하면 반영됨 |
+| `GEMINI_CLI_CMD` | `"agy"` | Gemini 역할을 실행할 실제 명령어 이름. 독립 `gemini` CLI로 바꾸려면 `"gemini"`로 설정. 단, 독립 `gemini` CLI는 `--dangerously-skip-permissions` 플래그를 지원하지 않을 수 있으니, 바꾼 뒤 `scripts/common.py`의 `gemini_cli_argv`에서 그 플래그 추가 부분을 빼야 할 수도 있음 |
+| `GEMINI_MODEL` | `""` | `agy --model`로 넘길 모델 이름(예: `"Gemini 3.1 Pro"`). 빈 문자열이면 계정 기본 모델. **Claude 모델 이름을 넣지 말 것** — 위 경고 참고 |
+| `BASE_BRANCH` | `"main"` | 작업 브랜치의 기준이자 병합 대상 브랜치. 연습/테스트를 할 때는 `"practice/todo-api"`처럼 별도 브랜치로 바꿔서 `main`을 건드리지 않고 격리해서 돌려볼 수 있음(위 "연습 브랜치로 안전하게 실습해보기" 참고) |
+| `RUN_LOOP_POLL_SEC` | `20` | `run_project.py`가 할 일이 없을 때(쿨다운 등) 다음 시도까지 재우는 최소 시간(초). 실제로는 쿨다운이 끝나는 시각까지 알아서 더 길게 잠 |
 
 ## 커스터마이징 포인트
 
@@ -360,4 +356,5 @@ CRUD 엔드포인트, 입력 검증, pytest 테스트, README까지 포함해서
 - Windows에서 npm/설치 스크립트로 깐 CLI(`claude.cmd`, `agy.exe` 등)를 못 찾는 경우, PATH에
   해당 설치 경로가 등록돼 있는지 확인하세요(`common.py`가 `shutil.which`로 찾습니다).
 - 이 템플릿은 뼈대일 뿐 프로덕션급 에러 처리를 전부 갖추고 있지 않습니다. 실제로 쓰기 전에
-  안전한 테스트 저장소에서 몇 사이클 돌려보고 로그(`state/orchestrator.log`)를 확인하세요.
+  안전한 테스트 저장소(위 "연습 브랜치로 안전하게 실습해보기" 참고)에서 몇 사이클 돌려보고
+  로그(`state/orchestrator.log`)를 확인하세요.
