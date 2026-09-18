@@ -1,5 +1,12 @@
 state/*.log
 state/*.lock
 state/*.until
-config/settings.env
+config/settings.json
+__pycache__/
+*.pyc
 .DS_Store
+
+# 실제 작업 큐는 버전관리하지 않습니다. worker들이 orchestrator.py 실행 중에
+# 브랜치를 넘나들며 이 파일을 갱신하는데, git이 추적하는 파일이면 다른 브랜치와
+# 내용이 달라질 때 checkout이 막혀버립니다(untracked면 브랜치를 넘나들어도 안전).
+tasks/queue.jsonl
