@@ -1,0 +1,9 @@
+[Unit]
+Description=AI Template orchestrator (Claude + Gemini task runner)
+
+[Service]
+Type=oneshot
+WorkingDirectory=__REPO_DIR__
+ExecStart=__REPO_DIR__/scripts/orchestrator.sh
+# 로그는 scripts/lib/common.sh 가 state/orchestrator.log 에도 남기지만,
+# journalctl --user -u ai-orchestrator.service 로도 확인 가능합니다.

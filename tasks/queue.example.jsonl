@@ -1,0 +1,2 @@
+{"id":"task-example1","desc":"README에 오타 수정 (Instalation -> Installation)","complexity":"simple","status":"todo","assignee":null,"retries":0,"review_notes":""}
+{"id":"task-example2","desc":"결제 모듈에 재시도 로직 추가 및 관련 단위 테스트 작성","complexity":"complex","status":"todo","assignee":null,"retries":0,"review_notes":""}

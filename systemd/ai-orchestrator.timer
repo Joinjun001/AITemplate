@@ -1,0 +1,12 @@
+[Unit]
+Description=Run AI Template orchestrator periodically
+
+[Timer]
+# 컴퓨터가 켜져 있는 동안 5분마다 실행. 필요에 맞게 조절하세요.
+OnBootSec=2min
+OnUnitActiveSec=5min
+# 컴퓨터가 꺼져 있어서 놓친 실행은 다음 부팅 시 한 번 따라잡습니다.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,5 @@
+state/*.log
+state/*.lock
+state/*.until
+config/settings.env
+.DS_Store
