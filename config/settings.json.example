@@ -4,5 +4,6 @@
   "COOLDOWN_MIN_GEMINI": 60,
   "CYCLE_INTERVAL_MIN": 5,
   "GEMINI_CLI_CMD": "agy",
-  "GEMINI_MODEL": ""
+  "GEMINI_MODEL": "",
+  "BASE_BRANCH": "main"
 }

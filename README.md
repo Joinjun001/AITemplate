@@ -246,6 +246,50 @@ python scripts/plan_project.py --file project_spec.txt
 - 완료된 작업들은 각각 별도 커밋 + 병합 커밋으로 남기 때문에, `git log --oneline`으로
   전체 프로젝트가 어떤 순서로 만들어졌는지 그대로 다시 볼 수 있습니다.
 
+## 연습 브랜치로 안전하게 실습해보기
+
+`main`을 바로 쓰기 전에, 별도 브랜치 안에서만 orchestrator가 작업하도록 격리해서
+연습해볼 수 있습니다. `BASE_BRANCH` 설정 덕분에 실제 템플릿 기록(`main`)은 전혀
+건드리지 않습니다.
+
+```bash
+# 1) main에서 연습용 브랜치를 하나 판다
+git checkout -b practice/todo-api main
+
+# 2) config/settings.json 에서 BASE_BRANCH를 그 브랜치로 지정
+#    (config/settings.json은 .gitignore에 있어서 커밋되지 않습니다)
+{
+  "BASE_BRANCH": "practice/todo-api"
+}
+
+# 3) 프로젝트를 통째로 맡긴다
+python scripts/plan_project.py "할일 관리 REST API 서버를 Flask + SQLite로 만들어줘.
+CRUD 엔드포인트, 입력 검증, pytest 테스트, README까지 포함해서."
+
+# 4) 빠르게 지켜보고 싶으면 orchestrator를 반복 실행
+python scripts/orchestrator.py   # 5~10초 간격으로 여러 번
+```
+
+이렇게 하면 `task/<id>` 브랜치들은 전부 `practice/todo-api`에서 갈라져 나와
+`practice/todo-api`로 다시 병합되고, `main`은 그대로 남습니다. 다 끝난 뒤
+결과가 마음에 들면 `git checkout main && git merge --no-ff practice/todo-api`로
+가져오고, 마음에 안 들면 그냥 `git branch -D practice/todo-api`로 지우면 됩니다
+(단, `queue.jsonl`은 브랜치와 무관하게 파일시스템에 그대로 남는 상태이므로,
+연습이 끝나면 `tasks/queue.jsonl`을 비우고 `config/settings.json`의
+`BASE_BRANCH`를 다시 `"main"`으로 되돌리는 것을 잊지 마세요).
+
+**중요 — 이 CLI들은 반드시 실제 로그인된 컴퓨터에서 실행해야 합니다.**
+`plan_project.py`와 orchestrator가 내부적으로 부르는 `claude`/`agy`는 여러분이
+`claude login`/Google 로그인으로 인증해 둔 그 구독(Claude Pro, Gemini Pro)을
+그대로 사용합니다. 즉 이 파이프라인은 클라우드 어딘가의 대리 서버가 아니라,
+**여러분 컴퓨터의 실제 터미널(PowerShell/cmd/터미널)에서** 실행해야
+의미가 있습니다. 파일을 원격으로 옮겨주는 브리지는 폴더 내용을 읽고 쓸 수는
+있어도, 그 컴퓨터에 설치된 `claude`/`agy` 실행 파일이나 로그인 세션 자체에는
+접근할 수 없기 때문에, 이 실행만큼은 사람이 직접 그 컴퓨터에서 명령을 쳐야 합니다.
+대신 실행 후 `state/orchestrator.log`와 `tasks/queue.jsonl`은 파일이라서,
+다음에 그 내용을 공유해주면 로그만 보고도 무엇이 잘 됐고 무엇을 고쳐야
+하는지 분석해서 템플릿을 계속 개선할 수 있습니다.
+
 ## 재시도/차단 정책
 
 - 리뷰에서 `changes_requested`를 받으면 원래 구현자에게 재작업이 배정되고 `retries`가 1 증가합니다.
@@ -269,6 +313,9 @@ python scripts/plan_project.py --file project_spec.txt
   `scripts/common.py`의 `gemini_cli_argv`에서 그 플래그 추가 부분을 빼야 할 수도 있습니다.
 - `GEMINI_MODEL`: `agy --model`로 넘길 모델 이름(예: `"Gemini 3.1 Pro"`). 빈 문자열이면
   계정 기본 모델을 씁니다. **Claude 모델 이름을 넣지 마세요** — 위 경고 참고.
+- `BASE_BRANCH`: 작업 브랜치의 기준이자 병합 대상 브랜치. 기본값 `"main"`. 연습/테스트를
+  할 때는 `"practice/todo-api"`처럼 별도 브랜치로 바꿔서 `main`을 건드리지 않고
+  격리해서 돌려볼 수 있습니다(바로 아래 "연습 브랜치로 안전하게 실습해보기" 참고).
 
 ## 커스터마이징 포인트
 

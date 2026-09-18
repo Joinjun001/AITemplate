@@ -31,6 +31,11 @@ DEFAULTS = {
     "COOLDOWN_MIN_CLAUDE": 300,  # Claude 5시간 롤링 한도 감지 시 기본 대기(분)
     "COOLDOWN_MIN_GEMINI": 60,   # Gemini(agy) 일일 한도 감지 시 기본 대기(분)
     "CYCLE_INTERVAL_MIN": 5,     # 스케줄러가 orchestrator를 부르는 주기(분)
+    # 작업 브랜치를 만들 때 기준으로 삼고, 승인된 작업을 병합해 넣을 브랜치.
+    # 실제 프로젝트는 "main"을 그대로 쓰면 되고, 템플릿 자체를 건드리지 않고
+    # 연습/테스트를 해보고 싶으면 예: "practice/todo-api" 같은 별도 브랜치로
+    # 바꿔서 그 브랜치 안에서만 orchestrator가 작업하게 격리할 수 있다.
+    "BASE_BRANCH": "main",
     # Gemini 계정으로 로그인해서 쓰는 CLI의 실제 실행 파일 이름.
     # Antigravity CLI(agy)를 쓰면 "agy", 독립 Gemini CLI를 쓰면 "gemini"로 바꾸세요.
     "GEMINI_CLI_CMD": "agy",

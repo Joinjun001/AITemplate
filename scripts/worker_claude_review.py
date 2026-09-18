@@ -27,8 +27,9 @@ def run(task_id: str) -> int:
     desc = task["desc"]
     branch = f"task/{task_id}"
     repo = common.REPO_DIR
+    base = common.SETTINGS.get("BASE_BRANCH", "main")
 
-    rc, diff = common.run_cli(["git", "diff", f"main..{branch}"], cwd=repo)
+    rc, diff = common.run_cli(["git", "diff", f"{base}..{branch}"], cwd=repo)
     if not diff.strip():
         common.log(f"리뷰할 diff가 없음 ({task_id}) -> todo로 되돌림")
         q.bump_retry(task_id)
@@ -40,7 +41,7 @@ def run(task_id: str) -> int:
 # 작업 명세
 {desc}
 
-# diff (task/{task_id} vs main)
+# diff (task/{task_id} vs {base})
 ```diff
 {diff}
 ```
@@ -71,9 +72,9 @@ def run(task_id: str) -> int:
 
     if verdict == "approve":
         common.ensure_clean_repo(repo)
-        rc, checkout_out = common.run_cli(["git", "checkout", "main"], cwd=repo)
+        rc, checkout_out = common.run_cli(["git", "checkout", base], cwd=repo)
         if rc != 0:
-            common.log(f"main 체크아웃 실패 ({task_id}), 병합 보류: {checkout_out}")
+            common.log(f"{base} 체크아웃 실패 ({task_id}), 병합 보류: {checkout_out}")
             return 1
         rc, merge_out = common.run_cli(
             ["git", "merge", "--no-ff", branch, "-m", f"Merge {branch}: {desc}"], cwd=repo
@@ -88,8 +89,8 @@ def run(task_id: str) -> int:
                 task_id,
                 status="todo",
                 review_notes=[
-                    "다른 작업이 먼저 병합되면서 main과 충돌났습니다. "
-                    "최신 main 기준으로 다시 구현해주세요."
+                    f"다른 작업이 먼저 병합되면서 {base}와 충돌났습니다. "
+                    f"최신 {base} 기준으로 다시 구현해주세요."
                 ],
                 retries=task.get("retries", 0) + 1,
             )

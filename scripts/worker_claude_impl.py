@@ -36,13 +36,14 @@ def run(task_id: str) -> int:
     branch = f"task/{task_id}"
     repo = common.REPO_DIR
 
+    base = common.SETTINGS.get("BASE_BRANCH", "main")
     common.ensure_clean_repo(repo)
-    rc, out = common.run_cli(["git", "checkout", "main"], cwd=repo)
+    rc, out = common.run_cli(["git", "checkout", base], cwd=repo)
     if rc != 0:
-        common.log(f"main 체크아웃 실패 ({task_id}): {out}")
+        common.log(f"{base} 체크아웃 실패 ({task_id}): {out}")
         q.update(task_id, status="todo")
         return 1
-    rc, out = common.run_cli(["git", "checkout", "-B", branch, "main"], cwd=repo)
+    rc, out = common.run_cli(["git", "checkout", "-B", branch, base], cwd=repo)
     if rc != 0:
         common.log(f"브랜치 생성 실패 ({task_id}): {out}")
         q.update(task_id, status="todo")
