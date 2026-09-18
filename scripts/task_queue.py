@@ -89,6 +89,29 @@ def update(task_id: str, **fields: Any) -> None:
     _write_all(tasks)
 
 
+def reclaim_stuck_in_progress() -> list[str]:
+    """이전 실행이 in_progress 상태인 작업을 남긴 채로 죽었으면(Ctrl+C,
+    프로세스 강제 종료, 정전 등) todo로 되돌린다.
+
+    in_progress는 orchestrator가 파일 락을 쥔 채로 워커를 동기 호출하는
+    아주 짧은 구간에만 존재해야 하는 상태다. 이 함수는 그 락을 방금
+    획득한 직후(=지금 이 프로세스 말고는 아무도 큐를 건드리고 있지
+    않다는 게 보장된 시점)에 호출하도록 되어 있으므로, 이 시점에 보이는
+    in_progress는 전부 이전 실행이 끝까지 못 가고 남긴 찌꺼기다. 실제로
+    run_project.py 실행 중 Ctrl+C로 멈췄을 때 작업 하나가 in_progress에
+    갇혀서, orchestrator가 todo만 찾기 때문에 영원히 다시 시도되지 않는
+    사고를 겪었다."""
+    tasks = _read_all()
+    reclaimed = []
+    for t in tasks:
+        if t.get("status") == "in_progress":
+            t["status"] = "todo"
+            reclaimed.append(t.get("id"))
+    if reclaimed:
+        _write_all(tasks)
+    return reclaimed
+
+
 def bump_retry(task_id: str, status: str = "todo", note: str | None = None) -> None:
     """재시도 횟수를 늘리고 상태를 바꾼다. note를 주면 review_notes에 실패
     이유를 남겨서, 나중에 blocked된 작업을 볼 때 로그를 뒤지지 않아도

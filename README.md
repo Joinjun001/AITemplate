@@ -337,6 +337,12 @@ python scripts/run_project.py "할일 관리 REST API 서버를 Flask + SQLite�
   실패로 치지 않습니다 — `retries`를 깎지 않고 `todo`로만 남겨서, 환경이 고쳐지면 다음 사이클에
   다시 시도됩니다. 이걸 실패로 쳐서 재시도를 깎았다면, 환경 문제 하나로 멀쩡한 작업이
   `blocked`로 잘못 잠기는 사고가 날 수 있기 때문입니다(실제로 겪었습니다).
+- `run_project.py` 실행 중 `Ctrl+C`나 강제 종료, 정전 등으로 워커가 파일을 손대는 도중에
+  죽으면 그 작업이 `in_progress`에 갇힐 수 있습니다(orchestrator는 `todo`만 찾아서 처리하므로,
+  그대로 두면 영원히 다시 시도되지 않습니다 — 실제로 겪었습니다). `orchestrator.py`는 매
+  사이클 시작 시(파일 락을 방금 획득해서 다른 실행이 없다고 보장되는 시점) `in_progress`로
+  남은 작업을 자동으로 `todo`로 되돌리므로, 사람이 직접 `tasks/queue.jsonl`을 고칠 필요가
+  없습니다.
 
 ## 설정 조정
 

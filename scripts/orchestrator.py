@@ -64,6 +64,15 @@ def main() -> int:
         common.warn_dangerous_env()
         common.warn_missing_clis()
 
+        # 락을 방금 획득했다는 건 지금 이 프로세스 말고는 아무도 큐를 안 건드리고
+        # 있다는 뜻이므로, 이 시점에 in_progress인 작업은 전부 이전 실행이
+        # Ctrl+C/강제종료/정전 등으로 끝까지 못 가고 남긴 찌꺼기다. todo로
+        # 되돌리지 않으면 orchestrator가 todo만 찾기 때문에 영원히 재시도되지
+        # 않고 조용히 멈춰버린다(실제로 겪었다).
+        reclaimed = q.reclaim_stuck_in_progress()
+        if reclaimed:
+            common.log(f"이전 실행이 in_progress로 남겨둔 작업을 todo로 되돌림: {', '.join(reclaimed)}")
+
         # 1) 리뷰 대기 작업 (구현자와 분리된 새 Claude 세션에서 diff만 보고 판단)
         if not common.is_cooling_down("claude"):
             review_task = q.next_with_status("in_review")
