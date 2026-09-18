@@ -29,8 +29,15 @@ QUEUE_FILE.touch(exist_ok=True)
 DEFAULTS = {
     "MAX_RETRIES": 3,
     "COOLDOWN_MIN_CLAUDE": 300,  # Claude 5시간 롤링 한도 감지 시 기본 대기(분)
-    "COOLDOWN_MIN_GEMINI": 60,   # Gemini 일일 한도 감지 시 기본 대기(분)
+    "COOLDOWN_MIN_GEMINI": 60,   # Gemini(agy) 일일 한도 감지 시 기본 대기(분)
     "CYCLE_INTERVAL_MIN": 5,     # 스케줄러가 orchestrator를 부르는 주기(분)
+    # Gemini 계정으로 로그인해서 쓰는 CLI의 실제 실행 파일 이름.
+    # Antigravity CLI(agy)를 쓰면 "agy", 독립 Gemini CLI를 쓰면 "gemini"로 바꾸세요.
+    "GEMINI_CLI_CMD": "agy",
+    # agy는 --model 로 Gemini 외에 Claude 모델도 고를 수 있지만, 그건 Google
+    # 플랜에 번들된 접근권이라 Anthropic Claude Pro 구독 한도와는 별개입니다.
+    # 여기서는 항상 Gemini 계열 모델만 쓰도록 비워두고, 필요하면 예: "Gemini 3.1 Pro"
+    "GEMINI_MODEL": "",
 }
 
 
@@ -68,6 +75,22 @@ def get_os() -> str:
     if system == "linux":
         return "linux"
     return "other"
+
+
+def gemini_cli_argv(prompt: str, skip_permissions: bool = False) -> list[str]:
+    """Gemini 계열(agy 또는 독립 gemini CLI) 호출용 argv를 만든다.
+
+    GEMINI_CLI_CMD 설정으로 실제 명령어 이름을 바꿀 수 있다(기본값 "agy").
+    agy는 -p/--dangerously-skip-permissions 등 Claude Code CLI와 거의 같은
+    플래그 이름을 쓰므로 그대로 재사용한다.
+    """
+    argv = [SETTINGS.get("GEMINI_CLI_CMD", "agy"), "-p", prompt]
+    model = SETTINGS.get("GEMINI_MODEL", "")
+    if model:
+        argv += ["--model", model]
+    if skip_permissions:
+        argv.append("--dangerously-skip-permissions")
+    return argv
 
 
 def run_cli(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:

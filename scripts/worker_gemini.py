@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""대량/단순 작업 워커: Gemini CLI가 직접 파일을 수정하고 브랜치에 커밋한다."""
+"""대량/단순 작업 워커: Gemini 계열 CLI(기본값 Antigravity CLI = agy)가 직접
+파일을 수정하고 브랜치에 커밋한다. 실제 실행 파일 이름은
+config/settings.json 의 GEMINI_CLI_CMD 로 바꿀 수 있다."""
 from __future__ import annotations
 
 import sys
@@ -43,15 +45,16 @@ def run(task_id: str) -> int:
 이 저장소(현재 디렉터리)의 관련 파일을 직접 열어보고 필요한 변경을 적용해줘.
 마지막에 변경한 파일 목록과 이유를 한국어로 간단히 요약해줘."""
 
-    rc, out = common.run_cli(["gemini", "-p", prompt], cwd=repo)
+    argv = common.gemini_cli_argv(prompt, skip_permissions=True)
+    rc, out = common.run_cli(argv, cwd=repo)
 
     if common.detect_limit_and_set_cooldown(out, "gemini", common.SETTINGS["COOLDOWN_MIN_GEMINI"]):
-        common.log(f"Gemini 쿨다운 감지 ({task_id}) -> todo로 유지")
+        common.log(f"Gemini({argv[0]}) 쿨다운 감지 ({task_id}) -> todo로 유지")
         q.update(task_id, status="todo")
         return 0
 
     if rc != 0:
-        common.log(f"Gemini 실행 실패 ({task_id}): {out[-500:]}")
+        common.log(f"Gemini({argv[0]}) 실행 실패 ({task_id}): {out[-500:]}")
         q.bump_retry(task_id)
         return 1
 

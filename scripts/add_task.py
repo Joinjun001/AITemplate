@@ -19,21 +19,18 @@ import task_queue as q  # noqa: E402
 
 
 def classify_with_gemini(desc: str) -> str:
-    print("[triage] Gemini로 복잡도 분류 중...")
-    rc, out = common.run_cli(
-        [
-            "gemini",
-            "-p",
-            "다음 작업이 '대량이거나 단순 반복적인 작업'이면 simple, "
-            f"'복잡한 설계 판단이 필요한 작업'이면 complex 라고 정확히 한 단어로만 답해라: {desc}",
-        ]
+    print(f"[triage] Gemini({common.SETTINGS.get('GEMINI_CLI_CMD', 'agy')})로 복잡도 분류 중...")
+    prompt = (
+        "다음 작업이 '대량이거나 단순 반복적인 작업'이면 simple, "
+        f"'복잡한 설계 판단이 필요한 작업'이면 complex 라고 정확히 한 단어로만 답해라: {desc}"
     )
+    rc, out = common.run_cli(common.gemini_cli_argv(prompt))
     low = out.lower()
     if rc == 0 and "simple" in low:
         return "simple"
     if rc == 0 and "complex" in low:
         return "complex"
-    print(f"[triage] 판단 실패, 안전하게 complex로 분류합니다. (gemini 출력: {out[:200]!r})")
+    print(f"[triage] 판단 실패, 안전하게 complex로 분류합니다. (출력: {out[:200]!r})")
     return "complex"
 
 
