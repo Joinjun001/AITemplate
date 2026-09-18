@@ -49,7 +49,15 @@ def run(task_id: str) -> int:
 반드시 아래 JSON 형식으로만 답하라. 다른 텍스트/설명은 절대 출력하지 마라.
 {{"verdict": "approve 또는 changes_requested", "comments": ["..."]}}"""
 
-    rc, out = common.run_cli(["claude", "-p", prompt, "--dangerously-skip-permissions"], cwd=repo)
+    # 구현자와 달리 리뷰어는 파일을 고칠 필요가 전혀 없다 — diff 텍스트만 보고
+    # JSON 하나만 내면 되는 순수 텍스트 판단이라 plan_project.py와 같은 이유로
+    # --dangerously-skip-permissions를 안 준다. 실제로 이 플래그를 켠 채로
+    # 돌려보니, Claude가 프롬프트에 준 diff를 안 믿고 자기가 직접 git 명령을
+    # 실행해서 "현재 작업 디렉터리"(직전 사이클이 마지막으로 체크아웃해둔,
+    # 리뷰 대상과 무관한 다른 브랜치)를 들여다보고 엉뚱한 답을 반복하는
+    # 문제가 실제로 발생했다. 툴 실행 권한 자체를 안 주면 프롬프트에 준
+    # 텍스트만으로 판단하도록 강제된다.
+    rc, out = common.run_cli(["claude", "-p", prompt], cwd=repo)
 
     if common.detect_limit_and_set_cooldown(out, "claude", common.SETTINGS["COOLDOWN_MIN_CLAUDE"]):
         common.log(f"Claude 쿨다운 감지(리뷰, {task_id}) -> in_review 유지, 다음 사이클에 재시도")
