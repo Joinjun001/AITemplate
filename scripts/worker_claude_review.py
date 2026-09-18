@@ -58,7 +58,10 @@ def run(task_id: str) -> int:
     # 리뷰 대상과 무관한 다른 브랜치)를 들여다보고 엉뚱한 답을 반복하는
     # 문제가 실제로 발생했다. 툴 실행 권한 자체를 안 주면 프롬프트에 준
     # 텍스트만으로 판단하도록 강제된다.
-    rc, out = common.run_cli(common.claude_cli_argv(prompt), cwd=repo)
+    # 프롬프트(diff 전체 포함)는 argv가 아니라 stdin으로 넘긴다 — diff가 큰
+    # 작업을 리뷰할 때 프롬프트를 인자로 그대로 넘겼다가 Windows에서
+    # "명령줄이 너무 깁니다" 오류로 리뷰가 통째로 실패한 적이 있다.
+    rc, out = common.run_cli(common.claude_cli_argv(), cwd=repo, input_text=prompt)
 
     if common.detect_limit_and_set_cooldown(out, "claude", common.SETTINGS["COOLDOWN_MIN_CLAUDE"]):
         common.log(f"Claude 쿨다운 감지(리뷰, {task_id}) -> in_review 유지, 다음 사이클에 재시도")

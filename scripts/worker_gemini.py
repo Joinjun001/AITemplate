@@ -48,8 +48,10 @@ def run(task_id: str) -> int:
 이 저장소(현재 디렉터리)의 관련 파일을 직접 열어보고 필요한 변경을 적용해줘.
 마지막에 변경한 파일 목록과 이유를 한국어로 간단히 요약해줘."""
 
-    argv = common.gemini_cli_argv(prompt, skip_permissions=True)
-    rc, out = common.run_cli(argv, cwd=repo)
+    # 프롬프트는 argv가 아니라 stdin으로 넘긴다 — Windows에서 긴 프롬프트를
+    # 인자로 넘겼다가 명령줄 길이 제한("명령줄이 너무 깁니다")에 걸린 적이 있다.
+    argv = common.gemini_cli_argv(skip_permissions=True)
+    rc, out = common.run_cli(argv, cwd=repo, input_text=prompt)
 
     if common.detect_limit_and_set_cooldown(out, "gemini", common.SETTINGS["COOLDOWN_MIN_GEMINI"]):
         common.log(f"Gemini({argv[0]}) 쿨다운 감지 ({task_id}) -> todo로 유지")

@@ -61,8 +61,10 @@ def run(task_id: str) -> int:
 작업 설명:
 {desc}{extra}"""
 
-    argv = common.claude_cli_argv(prompt, skip_permissions=True)
-    rc, out = common.run_cli(argv, cwd=repo)
+    # 프롬프트는 argv가 아니라 stdin으로 넘긴다 — Windows에서 긴 프롬프트를
+    # 인자로 넘겼다가 명령줄 길이 제한("명령줄이 너무 깁니다")에 걸린 적이 있다.
+    argv = common.claude_cli_argv(skip_permissions=True)
+    rc, out = common.run_cli(argv, cwd=repo, input_text=prompt)
 
     if common.detect_limit_and_set_cooldown(out, "claude", common.SETTINGS["COOLDOWN_MIN_CLAUDE"]):
         common.log(f"Claude 쿨다운 감지 ({task_id}) -> todo로 유지")

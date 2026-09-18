@@ -151,24 +151,36 @@ def ensure_clean_repo(repo: Path) -> None:
         run_cli(["git", "merge", "--abort"], cwd=repo)
 
 
-def claude_cli_argv(prompt: str, skip_permissions: bool = False) -> list[str]:
+def claude_cli_argv(skip_permissions: bool = False) -> list[str]:
     """claude CLI 호출용 argv를 만든다. CLAUDE_CLI_CMD 설정으로 실행 파일
     이름/경로를 바꿀 수 있다(기본값 "claude", install.py가 절대경로로
-    덮어쓸 수 있다)."""
-    argv = [SETTINGS.get("CLAUDE_CLI_CMD", "claude"), "-p", prompt]
+    덮어쓸 수 있다).
+
+    ⚠️ 프롬프트 텍스트는 여기 argv에 넣지 않는다 — run_cli(argv, input_text=prompt)로
+    stdin을 통해 넘겨야 한다. 예전에는 `-p <프롬프트 전체>`를 인자로 그대로
+    넘겼는데, 리뷰용 diff처럼 프롬프트가 길어지면(수천~수만 자) Windows에서
+    실제로 "명령줄이 너무 깁니다" 오류로 통째로 실패하는 걸 겪었다 — npm으로
+    설치된 claude/agy는 .CMD 배치 파일이라 실행하려면 cmd.exe를 거치는데,
+    cmd.exe 자체의 명령줄 길이 한도(약 8191자)에 걸린 것. stdin으로 넘기면
+    이 한도와 무관하게 항상 안전하다."""
+    argv = [SETTINGS.get("CLAUDE_CLI_CMD", "claude"), "-p"]
     if skip_permissions:
         argv.append("--dangerously-skip-permissions")
     return argv
 
 
-def gemini_cli_argv(prompt: str, skip_permissions: bool = False) -> list[str]:
+def gemini_cli_argv(skip_permissions: bool = False) -> list[str]:
     """Gemini 계열(agy 또는 독립 gemini CLI) 호출용 argv를 만든다.
 
     GEMINI_CLI_CMD 설정으로 실제 명령어 이름을 바꿀 수 있다(기본값 "agy").
     agy는 -p/--dangerously-skip-permissions 등 Claude Code CLI와 거의 같은
     플래그 이름을 쓰므로 그대로 재사용한다.
+
+    claude_cli_argv와 마찬가지로 프롬프트는 argv에 넣지 않는다 —
+    run_cli(argv, input_text=prompt)로 stdin을 통해 넘겨야 명령줄 길이
+    제한(Windows cmd.exe 기준 약 8191자)에 안전하다.
     """
-    argv = [SETTINGS.get("GEMINI_CLI_CMD", "agy"), "-p", prompt]
+    argv = [SETTINGS.get("GEMINI_CLI_CMD", "agy"), "-p"]
     model = SETTINGS.get("GEMINI_MODEL", "")
     if model:
         argv += ["--model", model]
@@ -177,12 +189,18 @@ def gemini_cli_argv(prompt: str, skip_permissions: bool = False) -> list[str]:
     return argv
 
 
-def run_cli(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
+def run_cli(cmd: list[str], cwd: Path | None = None, input_text: str | None = None) -> tuple[int, str]:
     """claude/gemini/git 등을 실행하고 (returncode, stdout+stderr)를 반환.
 
     Windows에서 npm으로 설치된 CLI(claude.cmd, gemini.cmd 등)는 subprocess가
     shell=False일 때 PATHEXT를 자동으로 못 찾는 경우가 있어, shutil.which로
     미리 실제 경로를 찾아서 넘깁니다.
+
+    input_text가 주어지면 그 내용을 프로세스 표준입력(stdin)으로 흘려보낸다
+    (claude/gemini의 프롬프트는 항상 이 방식으로 넘겨야 한다 — argv에 긴
+    텍스트를 그대로 넣으면 Windows의 cmd.exe 명령줄 길이 한도에 걸릴 수
+    있다. 실제로 리뷰용 diff가 큰 프롬프트를 인자로 넘겼다가 "명령줄이
+    너무 깁니다" 오류로 리뷰가 통째로 실패한 적이 있다).
     """
     if not cmd:
         return 1, "빈 명령어"
@@ -192,6 +210,8 @@ def run_cli(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
         proc = subprocess.run(
             argv,
             cwd=str(cwd) if cwd else None,
+            input=input_text,
+            stdin=subprocess.DEVNULL if input_text is None else None,
             capture_output=True,
             text=True,
             encoding="utf-8",

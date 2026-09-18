@@ -23,7 +23,7 @@ def classify_with_gemini(desc: str) -> str:
         "다음 작업이 '대량이거나 단순 반복적인 작업'이면 simple, "
         f"'복잡한 설계 판단이 필요한 작업'이면 complex 라고 정확히 한 단어로만 답해라: {desc}"
     )
-    rc, out = common.run_cli(common.gemini_cli_argv(prompt))
+    rc, out = common.run_cli(common.gemini_cli_argv(), input_text=prompt)
     low = out.lower()
     if rc == 0 and "simple" in low:
         return "simple"
