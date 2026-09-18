@@ -39,6 +39,13 @@ DEFAULTS = {
     # run_project.py가 "할 일이 없다(쿨다운 중)"일 때 다음 시도까지 최소로
     # 재우는 시간(초). 실제로는 쿨다운이 끝나는 시각까지 알아서 더 길게 잔다.
     "RUN_LOOP_POLL_SEC": 20,
+    # claude/Gemini CLI의 실행 파일 이름 또는 절대경로. 기본값은 그냥 이름이라
+    # PATH에서 찾지만, install.py를 실행하면 그 시점에 실제로 resolve된
+    # 절대경로로 자동으로 덮어써진다 — Windows 작업 스케줄러처럼 대화형 셸과
+    # PATH가 다른 환경에서 "명령어를 찾을 수 없음"으로 실패하는 걸 원천적으로
+    # 막기 위함이다(실제로 겪은 문제: 작업 스케줄러가 대화형 PowerShell과
+    # 다른 PATH로 떠서 agy를 못 찾고 재시도만 깎아먹은 적이 있다).
+    "CLAUDE_CLI_CMD": "claude",
     # Gemini 계정으로 로그인해서 쓰는 CLI의 실제 실행 파일 이름.
     # Antigravity CLI(agy)를 쓰면 "agy", 독립 Gemini CLI를 쓰면 "gemini"로 바꾸세요.
     "GEMINI_CLI_CMD": "agy",
@@ -99,6 +106,29 @@ def warn_dangerous_env() -> list[str]:
     return found
 
 
+def warn_missing_clis() -> list[str]:
+    """claude/Gemini CLI가 지금 이 프로세스의 PATH에서 실제로 찾아지는지
+    확인하고, 못 찾으면 경고 로그를 남긴다(그리고 찾으면 어디서 찾았는지도
+    로그에 남긴다 — 백그라운드 스케줄러와 대화형 셸이 서로 다른 PATH를 볼 때
+    이 로그 한 줄이 원인 파악 시간을 크게 줄여준다). CLI가 없다고 여기서
+    막지는 않는다 — 실제 실행 시점에 워커가 알아서 재시도 없이 todo로 남긴다."""
+    missing = []
+    for name, cmd in (
+        ("claude", SETTINGS.get("CLAUDE_CLI_CMD", "claude")),
+        ("gemini", SETTINGS.get("GEMINI_CLI_CMD", "agy")),
+    ):
+        resolved = shutil.which(cmd)
+        if resolved:
+            log(f"[환경확인] {name} CLI({cmd}) -> {resolved}")
+        else:
+            missing.append(cmd)
+            log(
+                f"⚠️ 경고: {name} CLI({cmd})를 이 프로세스의 PATH에서 찾을 수 없습니다. "
+                f"PATH={os.environ.get('PATH', '')[:400]}"
+            )
+    return missing
+
+
 def get_os() -> str:
     """'linux' | 'macos' | 'windows' | 'other' 중 하나."""
     system = platform.system().lower()
@@ -119,6 +149,16 @@ def ensure_clean_repo(repo: Path) -> None:
     if (repo / ".git" / "MERGE_HEAD").exists():
         log("이전 실행에서 남은 병합 충돌 상태 감지 -> git merge --abort로 정리")
         run_cli(["git", "merge", "--abort"], cwd=repo)
+
+
+def claude_cli_argv(prompt: str, skip_permissions: bool = False) -> list[str]:
+    """claude CLI 호출용 argv를 만든다. CLAUDE_CLI_CMD 설정으로 실행 파일
+    이름/경로를 바꿀 수 있다(기본값 "claude", install.py가 절대경로로
+    덮어쓸 수 있다)."""
+    argv = [SETTINGS.get("CLAUDE_CLI_CMD", "claude"), "-p", prompt]
+    if skip_permissions:
+        argv.append("--dangerously-skip-permissions")
+    return argv
 
 
 def gemini_cli_argv(prompt: str, skip_permissions: bool = False) -> list[str]:

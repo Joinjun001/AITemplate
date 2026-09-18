@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -40,6 +41,39 @@ def check_requirements() -> None:
             "대신 이 값으로 우회될 수 있습니다. 의도한 게 아니라면 지금 지우고 나서 설치를 "
             "계속하세요 (안 지우면 스케줄러가 무인으로 계속 그 값을 쓰게 됩니다).\n"
         )
+
+
+def pin_cli_absolute_paths() -> None:
+    """claude/GEMINI_CLI_CMD를 지금(설치를 실행 중인 이 대화형 셸) PATH로
+    resolve해서 config/settings.json에 절대경로로 박아 넣는다.
+
+    실제로 겪은 문제: Windows 작업 스케줄러가 대화형 PowerShell과 다른 PATH로
+    떠서, 대화형 셸에서는 잘 되던 `agy`를 작업 스케줄러 쪽에서는 "명령어를
+    찾을 수 없음"으로 매번 실패했다. 이름만 들고 있으면 그걸 부르는 쪽의
+    PATH에 기대야 하지만, 지금 이 시점(사람이 방금 로그인/실행을 확인한
+    상태)에 찾은 절대경로를 박아두면 나중에 어떤 프로세스가 이 스크립트를
+    불러도 항상 같은 실행 파일을 정확히 찾아간다."""
+    updated = dict(common.SETTINGS)
+    changed = []
+    for key, fallback in (
+        ("CLAUDE_CLI_CMD", "claude"),
+        ("GEMINI_CLI_CMD", common.SETTINGS.get("GEMINI_CLI_CMD", "agy")),
+    ):
+        current = updated.get(key, fallback)
+        resolved = shutil.which(current)
+        if resolved and resolved != current:
+            updated[key] = resolved
+            changed.append(f"{key}: {current} -> {resolved}")
+
+    if changed:
+        cfg_file = REPO_DIR / "config" / "settings.json"
+        cfg_file.parent.mkdir(parents=True, exist_ok=True)
+        cfg_file.write_text(json.dumps(updated, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print("[설정] CLI 경로를 지금 PATH 기준 절대경로로 고정했습니다 "
+              "(스케줄러가 다른 PATH로 떠도 못 찾는 일을 막기 위함):")
+        for line in changed:
+            print(f"  - {line}")
+        print()
 
 
 def install_linux(interval_min: int) -> None:
@@ -176,6 +210,7 @@ def install_windows(interval_min: int) -> None:
 
 def main() -> None:
     check_requirements()
+    pin_cli_absolute_paths()
     (REPO_DIR / "state").mkdir(exist_ok=True)
 
     interval_min = common.SETTINGS.get("CYCLE_INTERVAL_MIN", 5)

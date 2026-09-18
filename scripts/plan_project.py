@@ -37,7 +37,7 @@ def plan(description: str) -> list[dict]:
 
     # 계획 단계는 순수 텍스트 추론만 필요하므로 --dangerously-skip-permissions를
     # 주지 않는다 (파일을 건드릴 권한 자체를 안 준다).
-    rc, out = common.run_cli(["claude", "-p", prompt], cwd=common.REPO_DIR)
+    rc, out = common.run_cli(common.claude_cli_argv(prompt), cwd=common.REPO_DIR)
     if rc != 0:
         print(f"[plan] Claude 실행 실패: {out[-800:]}")
         sys.exit(1)

@@ -62,6 +62,7 @@ def main() -> int:
     try:
         common.log("===== orchestrator 사이클 시작 =====")
         common.warn_dangerous_env()
+        common.warn_missing_clis()
 
         # 1) 리뷰 대기 작업 (구현자와 분리된 새 Claude 세션에서 diff만 보고 판단)
         if not common.is_cooling_down("claude"):

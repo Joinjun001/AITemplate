@@ -278,11 +278,18 @@ python scripts/plan_project.py --file project_spec.txt
   있을 수도 있습니다.
 - 완료된 작업들은 각각 별도 커밋 + 병합 커밋으로 남기 때문에, `git log --oneline`으로
   전체 프로젝트가 어떤 순서로 만들어졌는지 그대로 다시 볼 수 있습니다.
-- `run_project.py`는 백그라운드 스케줄러가 이미 설치되어 있어도 동시에 실행해서 상관없습니다
-  (같은 파일 락을 공유해서 서로 겹치지 않게 비켜갑니다). 다만 로그가 섞여 보기 불편하니
-  실제로는 하나만 켜두는 걸 권장합니다.
 - `run_project.py`는 끝나면 완료/차단(blocked) 건수를 요약해서 보여주고, `blocked`가 있으면
   어떤 작업이 왜 막혔는지(`review_notes`)까지 함께 출력합니다.
+
+> ⚠️ **`run_project.py`를 쓰는 동안은 백그라운드 스케줄러(작업 스케줄러/systemd/launchd)를
+> 꺼두세요.** 파일 락 덕분에 두 프로세스가 동시에 같은 작업을 건드리지는 않지만, 실제로 겪은
+> 문제는 그게 아니라 **둘이 서로 다른 PATH를 본다는 것**이었습니다 — 대화형 PowerShell에서는
+> `claude`/`agy`가 잘 찾아지는데, Windows 작업 스케줄러가 실행하는 프로세스는 설치 시점에
+> 캡처된 다른 PATH를 써서 같은 명령을 못 찾고, 그때마다 재시도 횟수만 깎아먹어 멀쩡한 작업이
+> `blocked`로 잘못 잠기는 사고가 났습니다. `install.py`가 이제 CLI 경로를 설치 시점의 절대경로로
+> `config/settings.json`에 고정해서(아래 "설정 조정" 참고) 이 문제 자체를 줄여주지만, 안전하게는
+> `run_project.py`로 직접 지켜볼 때는 스케줄러를 끄고(Windows: `schtasks /Change /TN
+> AITemplateOrchestrator /DISABLE`), 다 쓴 뒤 다시 켜는(`/ENABLE`) 걸 권장합니다.
 
 ## 연습 브랜치로 안전하게 실습해보기
 
@@ -314,7 +321,13 @@ python scripts/run_project.py "할일 관리 REST API 서버를 Flask + SQLite�
 
 - 리뷰에서 `changes_requested`를 받으면 원래 구현자에게 재작업이 배정되고 `retries`가 1 증가합니다.
 - `retries`가 `MAX_RETRIES`(기본 3)에 도달하면 `status`가 `blocked`로 바뀌고 더 이상 자동으로
-  건드리지 않습니다. `review_notes`를 보고 사람이 직접 개입하세요.
+  건드리지 않습니다. `review_notes`를 보고 사람이 직접 개입하세요 — 실행 실패나 "변경사항 없음"으로
+  인한 재시도라면 이제 그 이유가 `review_notes`에 그대로 남으므로, `state/orchestrator.log`를
+  뒤지지 않아도 `tasks/queue.jsonl`만 보고 왜 막혔는지 바로 알 수 있습니다.
+- `claude`/Gemini 명령어 자체를 못 찾은 경우(PATH 문제 등, `WinError 2` 같은 메시지)는 구현
+  실패로 치지 않습니다 — `retries`를 깎지 않고 `todo`로만 남겨서, 환경이 고쳐지면 다음 사이클에
+  다시 시도됩니다. 이걸 실패로 쳐서 재시도를 깎았다면, 환경 문제 하나로 멀쩡한 작업이
+  `blocked`로 잘못 잠기는 사고가 날 수 있기 때문입니다(실제로 겪었습니다).
 
 ## 설정 조정
 
@@ -327,7 +340,8 @@ python scripts/run_project.py "할일 관리 REST API 서버를 Flask + SQLite�
 | `COOLDOWN_MIN_CLAUDE` | `300` | 리밋 메시지는 감지했는데 정확한 리셋 시각을 못 읽었을 때 기본 대기(분). Claude Code는 롤링 5시간 한도라 기본값 300분 |
 | `COOLDOWN_MIN_GEMINI` | `60` | 위와 동일하되 Gemini용. 보통 자정 기준 일일 한도라 짧게 잡음 |
 | `CYCLE_INTERVAL_MIN` | `5` | 스케줄러가 orchestrator를 부르는 주기(분). `install.py`를 다시 실행하면 반영됨 |
-| `GEMINI_CLI_CMD` | `"agy"` | Gemini 역할을 실행할 실제 명령어 이름. 독립 `gemini` CLI로 바꾸려면 `"gemini"`로 설정. 단, 독립 `gemini` CLI는 `--dangerously-skip-permissions` 플래그를 지원하지 않을 수 있으니, 바꾼 뒤 `scripts/common.py`의 `gemini_cli_argv`에서 그 플래그 추가 부분을 빼야 할 수도 있음 |
+| `CLAUDE_CLI_CMD` | `"claude"` | claude CLI 실행 파일 이름/경로. `install.py`를 실행하면 그 시점 PATH로 resolve된 **절대경로**로 자동 덮어써져서, 나중에 다른 프로세스(예: Windows 작업 스케줄러)가 다른 PATH로 떠도 항상 같은 실행 파일을 찾도록 고정됩니다 |
+| `GEMINI_CLI_CMD` | `"agy"` | Gemini 역할을 실행할 실제 명령어 이름. 독립 `gemini` CLI로 바꾸려면 `"gemini"`로 설정. 단, 독립 `gemini` CLI는 `--dangerously-skip-permissions` 플래그를 지원하지 않을 수 있으니, 바꾼 뒤 `scripts/common.py`의 `gemini_cli_argv`에서 그 플래그 추가 부분을 빼야 할 수도 있음. 이 값도 `install.py` 실행 시 절대경로로 고정됩니다 |
 | `GEMINI_MODEL` | `""` | `agy --model`로 넘길 모델 이름(예: `"Gemini 3.1 Pro"`). 빈 문자열이면 계정 기본 모델. **Claude 모델 이름을 넣지 말 것** — 위 경고 참고 |
 | `BASE_BRANCH` | `"main"` | 작업 브랜치의 기준이자 병합 대상 브랜치. 연습/테스트를 할 때는 `"practice/todo-api"`처럼 별도 브랜치로 바꿔서 `main`을 건드리지 않고 격리해서 돌려볼 수 있음(위 "연습 브랜치로 안전하게 실습해보기" 참고) |
 | `RUN_LOOP_POLL_SEC` | `20` | `run_project.py`가 할 일이 없을 때(쿨다운 등) 다음 시도까지 재우는 최소 시간(초). 실제로는 쿨다운이 끝나는 시각까지 알아서 더 길게 잠 |

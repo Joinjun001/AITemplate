@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -60,16 +61,28 @@ def run(task_id: str) -> int:
 작업 설명:
 {desc}{extra}"""
 
-    rc, out = common.run_cli(["claude", "-p", prompt, "--dangerously-skip-permissions"], cwd=repo)
+    argv = common.claude_cli_argv(prompt, skip_permissions=True)
+    rc, out = common.run_cli(argv, cwd=repo)
 
     if common.detect_limit_and_set_cooldown(out, "claude", common.SETTINGS["COOLDOWN_MIN_CLAUDE"]):
         common.log(f"Claude 쿨다운 감지 ({task_id}) -> todo로 유지")
         q.update(task_id, status="todo")
         return 0
 
+    if rc == 127:
+        # worker_gemini.py와 같은 이유: 명령어를 못 찾은 건 구현 실패가
+        # 아니라 환경/PATH 문제라서 재시도를 깎지 않는다.
+        common.log(
+            f"⚠️ {argv[0]}(Claude) 명령을 찾을 수 없습니다 — 구현 실패가 아니라 환경/PATH "
+            f"문제로 보여 재시도 횟수는 깎지 않고 todo로 유지합니다 ({task_id}). "
+            f"PATH={os.environ.get('PATH', '')[:400]}"
+        )
+        q.update(task_id, status="todo")
+        return 1
+
     if rc != 0:
         common.log(f"Claude 실행 실패 ({task_id}): {out[-500:]}")
-        q.bump_retry(task_id)
+        q.bump_retry(task_id, note=f"claude 실행 실패: {out[-300:]}")
         return 1
 
     _, status_out = common.run_cli(["git", "status", "--porcelain"], cwd=repo)
@@ -80,7 +93,11 @@ def run(task_id: str) -> int:
         common.log(f"Claude 구현 완료, 리뷰 대기로 전환: {task_id}")
     else:
         common.log(f"Claude가 변경사항을 만들지 않음 ({task_id}) -> 재시도 카운트 증가")
-        q.bump_retry(task_id)
+        q.bump_retry(
+            task_id,
+            note="Claude 실행은 성공했지만 파일을 변경하지 않았습니다 "
+            "(선행 작업이 아직 안 끝나서 전제 조건이 없거나, 이미 반영된 내용이었을 수 있습니다).",
+        )
     return 0
 
 

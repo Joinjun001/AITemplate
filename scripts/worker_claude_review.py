@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -57,11 +58,18 @@ def run(task_id: str) -> int:
     # 리뷰 대상과 무관한 다른 브랜치)를 들여다보고 엉뚱한 답을 반복하는
     # 문제가 실제로 발생했다. 툴 실행 권한 자체를 안 주면 프롬프트에 준
     # 텍스트만으로 판단하도록 강제된다.
-    rc, out = common.run_cli(["claude", "-p", prompt], cwd=repo)
+    rc, out = common.run_cli(common.claude_cli_argv(prompt), cwd=repo)
 
     if common.detect_limit_and_set_cooldown(out, "claude", common.SETTINGS["COOLDOWN_MIN_CLAUDE"]):
         common.log(f"Claude 쿨다운 감지(리뷰, {task_id}) -> in_review 유지, 다음 사이클에 재시도")
         return 0
+
+    if rc == 127:
+        common.log(
+            f"⚠️ claude 명령을 찾을 수 없어 리뷰를 건너뜁니다 ({task_id}, 환경/PATH 문제로 보임). "
+            f"PATH={os.environ.get('PATH', '')[:400]}"
+        )
+        return 1
 
     if rc != 0:
         common.log(f"리뷰 실행 실패 ({task_id}): {out[-500:]}")

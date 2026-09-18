@@ -4,6 +4,7 @@
 config/settings.json 의 GEMINI_CLI_CMD 로 바꿀 수 있다."""
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -55,9 +56,24 @@ def run(task_id: str) -> int:
         q.update(task_id, status="todo")
         return 0
 
+    if rc == 127:
+        # 명령어 자체를 못 찾은 경우(PATH 문제 등)는 구현이 실패한 게
+        # 아니라 환경 설정 문제다. 이걸 진짜 실패로 치고 재시도를 깎으면,
+        # PATH가 다른 스케줄러(예: Windows 작업 스케줄러)가 몇 번 돌기만
+        # 해도 MAX_RETRIES를 넘겨서 멀쩡한 작업이 blocked로 잘못 잠기는
+        # 사고가 난다(실제로 겪음). 재시도 카운트는 그대로 두고 todo로만
+        # 남겨서, 환경이 고쳐지면 다음 사이클에 다시 시도되게 한다.
+        common.log(
+            f"⚠️ {argv[0]}(Gemini) 명령을 찾을 수 없습니다 — 구현 실패가 아니라 환경/PATH "
+            f"문제로 보여 재시도 횟수는 깎지 않고 todo로 유지합니다 ({task_id}). "
+            f"PATH={os.environ.get('PATH', '')[:400]}"
+        )
+        q.update(task_id, status="todo")
+        return 1
+
     if rc != 0:
         common.log(f"Gemini({argv[0]}) 실행 실패 ({task_id}): {out[-500:]}")
-        q.bump_retry(task_id)
+        q.bump_retry(task_id, note=f"{argv[0]} 실행 실패: {out[-300:]}")
         return 1
 
     _, status_out = common.run_cli(["git", "status", "--porcelain"], cwd=repo)
@@ -68,7 +84,11 @@ def run(task_id: str) -> int:
         common.log(f"Gemini 작업 완료, 리뷰 대기로 전환: {task_id}")
     else:
         common.log(f"Gemini가 변경사항을 만들지 않음 ({task_id}) -> 재시도 카운트 증가")
-        q.bump_retry(task_id)
+        q.bump_retry(
+            task_id,
+            note="Gemini(agy) 실행은 성공했지만 파일을 변경하지 않았습니다 "
+            "(선행 작업이 아직 안 끝나서 전제 조건이 없거나, 이미 반영된 내용이었을 수 있습니다).",
+        )
     return 0
 
 

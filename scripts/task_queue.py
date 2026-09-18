@@ -89,10 +89,15 @@ def update(task_id: str, **fields: Any) -> None:
     _write_all(tasks)
 
 
-def bump_retry(task_id: str, status: str = "todo") -> None:
+def bump_retry(task_id: str, status: str = "todo", note: str | None = None) -> None:
+    """재시도 횟수를 늘리고 상태를 바꾼다. note를 주면 review_notes에 실패
+    이유를 남겨서, 나중에 blocked된 작업을 볼 때 로그를 뒤지지 않아도
+    큐 파일만 보고 왜 막혔는지 바로 알 수 있게 한다."""
     tasks = _read_all()
     for t in tasks:
         if t.get("id") == task_id:
             t["retries"] = t.get("retries", 0) + 1
             t["status"] = status
+            if note:
+                t["review_notes"] = note
     _write_all(tasks)

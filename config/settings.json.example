@@ -3,7 +3,9 @@
   "COOLDOWN_MIN_CLAUDE": 300,
   "COOLDOWN_MIN_GEMINI": 60,
   "CYCLE_INTERVAL_MIN": 5,
+  "CLAUDE_CLI_CMD": "claude",
   "GEMINI_CLI_CMD": "agy",
   "GEMINI_MODEL": "",
-  "BASE_BRANCH": "main"
+  "BASE_BRANCH": "main",
+  "RUN_LOOP_POLL_SEC": 20
 }
